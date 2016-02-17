@@ -41,25 +41,33 @@ class LoginWindow(QtWebKit.QWebView):
 		super(LoginWindow, self).__init__()
 		self.state = None
 		self.urlChanged.connect(self.check_URL)
+		self.nam = self.page().networkAccessManager()
+		self.nam.finished.connect(self.checkResponse)
 		
+	def checkResponse(self,reply):
+		request = reply.request()
+		# Get the HTTP statuscode for this response
+		statuscode = reply.attribute(request.HttpStatusCodeAttribute)
+		# The accesstoken is given with a 302 statuscode to redirect
+		
+		if statuscode == 302:
+			redirectUrl = reply.attribute(request.RedirectionTargetAttribute)
+			if redirectUrl.hasFragment():
+				r_url = redirectUrl.toString()
+				if osf.redirect_uri in r_url:
+					self.token = osf.parse_token_from_url(r_url)
+					if self.token:
+						self.close()
+						self.quit()
+							
 	def set_state(self,state):
 		self.state = state
 		
-	def load(self, url):
-		print("Loading: {}".format(url))
-		QtWebKit.QWebView.load(self,url)
-		
 	def check_URL(self, url):
-		new_url = url.toString()
-				
-		if osf.base_url in new_url:
-			print("Still in authentication process: {}".format(url))
-		elif url.hasFragment():
-			print("On token page: {}".format(url))
-			self.token = osf.parse_token_from_url(new_url)
-			print(self.token)
-		else:
-			print("Unexpected url: {}".format(url))
+		new_url = url.toEncoded()
+		
+		if not osf.base_url in new_url:
+			print("URL CHANGED: Unexpected url: {}".format(url))
 		
 if __name__ == "__main__":
 	""" Test if user can connect to OSF. Opens up a browser window in the form
@@ -79,7 +87,7 @@ if __name__ == "__main__":
 
 	exitcode = app.exec_()
 	print("App exiting with code {}".format(exitcode))
-	sys.exit(exitcode)
+	#sys.exit(exitcode)
 	
 
 

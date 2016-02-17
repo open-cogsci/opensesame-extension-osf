@@ -39,13 +39,13 @@ from oauthlib.oauth2 import MobileApplicationClient
 
 #%%---------------------- Main configuration settings --------------------------
 client_id = "cbc4c47b711a4feab974223b255c81c1"
-redirect_uri = "https://www.getpostman.com/oauth2/callback"
+redirect_uri = "https://google.nl"
 #redirect_uri = "https://cogsci.nl/callback"
 
 # Generate correct URLs
-base_url = "https://test-accounts.osf.io/oauth2/"
-auth_url = base_url + "authorize"
-token_url = base_url + "token"
+base_url = "https://test-accounts.osf.io/"
+auth_url = base_url + "oauth2/authorize"
+token_url = base_url + "oauth2/token"
 #%%-----------------------------------------------------------------------------
 
 mobile_app_client = MobileApplicationClient(client_id)
