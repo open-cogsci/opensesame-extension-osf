@@ -1,0 +1,12 @@
+label: OpenScienceFramework
+icon: folder-remote
+tooltip: Connect to the OSF
+menu:
+  index: 0
+  separator_after: false
+  separator_before: false
+  submenu: Example
+toolbar:
+  index: -1
+  separator_after: false
+  separator_before: true
