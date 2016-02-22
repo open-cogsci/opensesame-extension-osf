@@ -79,6 +79,8 @@ class LoginWindow(QtWebKit.QWebView):
 class UserBadge(QtGui.QWidget):
 	""" A Widget showing the logged in user """
 	
+	image_size = QtCore.QSize(50,50)
+	
 	def __init__(self, connection=None):
 		super(UserBadge, self).__init__()
 		self.initUI()
@@ -93,7 +95,7 @@ class UserBadge(QtGui.QWidget):
 		if not os.path.isfile(osf_logo):
 			print("ERROR: OSF logo not found at {}".format(osf_logo))
 
-		self.osf_logo_pixmap = QtGui.QPixmap(osf_logo)		
+		self.osf_logo_pixmap = QtGui.QPixmap(osf_logo)	.scaled(self.image_size)
 		
 		osf_icon = QtGui.QIcon(osf_logo)
 		self.setWindowIcon(osf_icon)
@@ -139,12 +141,13 @@ class UserBadge(QtGui.QWidget):
 			avatar_img = requests.get(avatar_url).content
 			pixmap = QtGui.QPixmap()
 			pixmap.loadFromData(avatar_img)
+			pixmap = pixmap.scaled(self.image_size)
 			
 			# Update sub-widgets
 			self.user_name.setText(full_name)
 			self.avatar.setPixmap(pixmap)
 			self.loginbutton.setText("Log out")
 		else:
-			self.user_name.setText("Please login")
+			self.user_name.setText("")
 			self.avatar.setPixmap(self.osf_logo_pixmap)
 			self.loginbutton.setText("Log in to OSF")

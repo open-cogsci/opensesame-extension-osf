@@ -36,7 +36,7 @@ from oauthlib.oauth2 import MobileApplicationClient
 # Easier function decorating
 from functools import wraps
 
-#%%---------------------- Main configuration settings --------------------------
+#%%---------------------- Oauth functionality -------------------------
 client_id = "cbc4c47b711a4feab974223b255c81c1"
 redirect_uri = "https://www.getpostman.com/oauth2/callback"
 
@@ -44,12 +44,9 @@ redirect_uri = "https://www.getpostman.com/oauth2/callback"
 base_url = "https://test-accounts.osf.io/"
 auth_url = base_url + "oauth2/authorize"
 token_url = base_url + "oauth2/token"
+logout_url = base_url + "oauth2/revoke_token"
 
-api_base_url = "https://test-api.osf.io/v2/"
-
-
-#%%-----------------------------------------------------------------------------
-
+# Set up requests_oauthlib object
 mobile_app_client = MobileApplicationClient(client_id)
 
 # Create an OAuth2 session for the OSF
@@ -59,13 +56,6 @@ session = OAuth2Session(
 	scope="osf.full_write", 
 	redirect_uri=redirect_uri,
 )
-
-api_calls = {
-	"logged_in_user":"users/me",
-}
-
-def get_api_endpoint(command):
-	return api_base_url + api_calls[command]
 
 def get_authorization_url():
 	""" Generate the URL with which one can authenticate at the OSF and allow 
@@ -92,6 +82,28 @@ def requires_authentication(func):
 		return func(*args, **kwargs)
 	return func_wrapper
 	
+@requires_authentication
+def logout():
+	resp = session.post(logout_url,{
+		"client_id": client_id,
+		"token": session.access_token
+	})
+	session.token = {}
+	return resp
+
+#%%------------------------ API configuration settings -------------------------
+api_base_url = "https://test-api.osf.io/v2/"
+
+api_calls = {
+	"logged_in_user":"users/me",
+}
+
+def get_api_endpoint(command):
+	return api_base_url + api_calls[command]
+
+	
+#%% Functions interacting with the OSF API	
+
 @requires_authentication
 def logged_in_user():
 	return session.get(get_api_endpoint("logged_in_user")).json()

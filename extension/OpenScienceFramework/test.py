@@ -25,7 +25,8 @@ from __future__ import unicode_literals
 # Import basics
 import sys
 import os
-import inspect
+import json
+import time
 
 # Required QT classes
 from PyQt4 import QtGui, QtCore
@@ -36,77 +37,30 @@ import connection as osf
 # Widgets
 import widgets
 
-
-class EventDispatcher(object):
-	# List of possible events this dispatcher can emit
-	events = ["login","logout"]	
-	
-	def __init__(self):
-		super(EventDispatcher, self).__init__()
-		self.__listeners = []
-	
-	def __check_events(self,item):
-		"""Checks if the passed object has the required handler functions.
-		Args:
-			item - the object to check
-		Raises:
-			NameError - if the object does not have the required event handling 
-			functions
-		"""
-		for event in self.events:
-			if not hasattr(item,"handle_"+event) or not inspect.ismethod(getattr(item,"handle_"+event)):
-				raise NameError("{} does not have the required function {}".\
-					format(item.__name__, "handle_"+event))
-	
-	def add(self, obj):
-		""" Add (a) new object(s) to the list of objects listening for the events 
-	
-		Args:
-			obj - the listener to add. Can be a single listener or a list of listeners.
-		"""
-		# If the object passed is a list, check if each object in the list has the
-		# required event handling functions
-		if type(obj) == list:
-			for item in obj:
-				self.__check_events(item)
-			self.__listeners.extend(obj)
-		else:
-		# If a single object is passed, check if it has the required functions
-			self.__check_events(obj)
-			self.__listeners.append(obj)
-		return self
-			
-	def remove(self,obj):
-		for item in self.__listeners:
-			# Delete by object reference
-			if obj is item:
-				del self.__listeners[self.__listeners.index(item)]
-			# Delete by index
-			if type(obj) == int:
-				del self.__listeners[obj]
-		return self
-			
-	def get_listeners(self):
-		return self.__listeners
+# Event dispatcher
+from util import EventDispatcher, TestListener
 		
-	def dispatch(self,event):
-		if not event in self.events:
-			raise ValueError("Unknown event '{}'".format(event))
-			
-		for item in self.__listeners:
-			# Check here again, just to be sure
-			if not hasattr(item,"handle_"+event) or not inspect.ismethod(getattr(item,"handle_"+event)):
-				raise NameError("{} does not have the required function {}".\
-					format(item.__name__, "handle_"+event))
-			# Call the function!
-			getattr(item,"handle_"+event)()	
-			
-class TestListener(object):
+class TokenFileListener(object):
+	def __init__(self,tokenfile):
+		super(TokenFileListener,self).__init__()
+		self.tokenfile = tokenfile
+	
 	def handle_login(self):
-		print("Login event received")
-		
+		if osf.session.token:
+			tokenstr = json.dumps(osf.session.token)
+			with open(self.tokenfile,'w') as f:
+				f.write(tokenstr)
+		else:
+			print("Error, could not find authentication token")
+
 	def handle_logout(self):
-		print("logout event received")
+		if os.path.isfile(self.tokenfile):
+			try:
+				os.remove(self.tokenfile)
+			except Exception as e:
+				print("WARNING: {}".format(e.message))
+		
+			
 		
 if __name__ == "__main__":
 	""" Test if user can connect to OSF. Opens up a browser window in the form
@@ -114,27 +68,43 @@ if __name__ == "__main__":
 	# Import QT libraries
 
 	app = QtGui.QApplication(sys.argv)
-	browser = widgets.LoginWindow()
 	user_badge = widgets.UserBadge()
 	dispatcher = EventDispatcher()
+	browser = widgets.LoginWindow()
 	
-	auth_url, state = osf.get_authorization_url()
-	print("Generated authorization url: {}".format(auth_url))
-	
-	# Set up browser
-	browser_url = QtCore.QUrl.fromEncoded(auth_url)
-	browser.load(browser_url)
-	browser.show()
+	tokenfile = "token.json"	
 	
 	# Set up user badge
-	user_badge.move(1000,100)
+	user_badge.move(1100,100)
 	user_badge.show()
 
 	# Connect login events of browser to EventDispatcher's dispatch function	
 	browser.logged_in.connect(dispatcher.dispatch)
 	
 	tl = TestListener() # To be removed later	
-	dispatcher.add([user_badge, tl])
+	tfl = TokenFileListener(tokenfile)
+	dispatcher.add([user_badge, tl, tfl])
+	
+	if os.path.isfile(tokenfile):
+		with open(tokenfile,"r") as f:
+			token = json.loads(f.read())
+			
+		# Check if token has not yet expired
+		if token["expires_at"] > time.time():
+			osf.session.token = token
+		else:
+			print("Token expired; need log-in")
+	
+	if not osf.is_authorized():
+		auth_url, state = osf.get_authorization_url()
+		print("Generated authorization url: {}".format(auth_url))
+		
+		# Set up browser
+		browser_url = QtCore.QUrl.fromEncoded(auth_url)
+		browser.load(browser_url)
+		browser.show()
+	else:
+		dispatcher.dispatch("login")
 	
 	exitcode = app.exec_()
 	print("App exiting with code {}".format(exitcode))
