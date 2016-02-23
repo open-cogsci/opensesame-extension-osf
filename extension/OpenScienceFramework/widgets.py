@@ -24,6 +24,7 @@ from __future__ import unicode_literals
 
 import os
 import sys
+import logging
 
 # QT classes
 from PyQt4 import QtGui, QtCore, QtWebKit
@@ -35,7 +36,6 @@ import requests
 class LoginWindow(QtWebKit.QWebView):
 	""" A Login window for the OSF """
 	# Login event is emitted after successfull login
-	logged_in = QtCore.pyqtSignal(['QString'])	
 	
 	def __init__(self):
 		super(LoginWindow, self).__init__()
@@ -67,7 +67,6 @@ class LoginWindow(QtWebKit.QWebView):
 					print("Token URL: {}".format(r_url))
 					self.token = osf.parse_token_from_url(r_url)
 					if self.token:
-						self.logged_in.emit("login")
 						self.close()
 		
 	def check_URL(self, url):
@@ -79,7 +78,16 @@ class LoginWindow(QtWebKit.QWebView):
 class UserBadge(QtGui.QWidget):
 	""" A Widget showing the logged in user """
 	
+	# Class variables
+	
+	# Size of avatar and osf logo display image
 	image_size = QtCore.QSize(50,50)
+	# Login and logout events
+	logout_request = QtCore.pyqtSignal()
+	login_request = QtCore.pyqtSignal()
+	# button texts
+	login_text = "Log in to OSF"
+	logout_text = "Log out"
 	
 	def __init__(self, connection=None):
 		super(UserBadge, self).__init__()
@@ -107,7 +115,8 @@ class UserBadge(QtGui.QWidget):
 		self.avatar = QtGui.QLabel()
 		
 		# Login button
-		self.loginbutton = QtGui.QPushButton(self)
+		self.statusbutton = QtGui.QPushButton(self)
+		self.statusbutton.clicked.connect(self.__handle_click)
 		
 		# Determine content of labels:
 		self.check_user_status()
@@ -120,10 +129,20 @@ class UserBadge(QtGui.QWidget):
 		login_grid = QtGui.QGridLayout()
 		login_grid.setSpacing(5)
 		login_grid.addWidget(self.user_name,1,1)
-		login_grid.addWidget(self.loginbutton,2,1)
+		login_grid.addWidget(self.statusbutton,2,1)
 		
 		grid.addLayout(login_grid,1,1)
 		self.setLayout(grid)
+	
+	def __handle_click(self):
+		button = self.sender()
+		logging.info("Button {} clicked".format(button.text()))
+		if button.text() == self.login_text:
+			self.login_request.emit()
+		elif button.text() == self.logout_text:
+			button.setText("Logging out...")
+			self.logout_request.emit()
+			
 		
 	def handle_login(self):
 		self.check_user_status()
@@ -146,8 +165,8 @@ class UserBadge(QtGui.QWidget):
 			# Update sub-widgets
 			self.user_name.setText(full_name)
 			self.avatar.setPixmap(pixmap)
-			self.loginbutton.setText("Log out")
+			self.statusbutton.setText(self.logout_text)
 		else:
 			self.user_name.setText("")
 			self.avatar.setPixmap(self.osf_logo_pixmap)
-			self.loginbutton.setText("Log in to OSF")
+			self.statusbutton.setText(self.login_text)

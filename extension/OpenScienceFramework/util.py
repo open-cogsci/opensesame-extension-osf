@@ -22,7 +22,11 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+# Import basics
 import inspect
+import logging
+import os
+import json
 
 class EventDispatcher(object):
 	# List of possible events this dispatcher can emit
@@ -76,6 +80,12 @@ class EventDispatcher(object):
 	def get_listeners(self):
 		return self.__listeners
 		
+	def dispatch_login(self):
+		self.dispatch("login")
+		
+	def dispatch_logout(self):
+		self.dispatch("logout")
+		
 	def dispatch(self,event):
 		if not event in self.events:
 			raise ValueError("Unknown event '{}'".format(event))
@@ -90,10 +100,10 @@ class EventDispatcher(object):
 			
 class TestListener(object):
 	def handle_login(self):
-		print("Login event received")
+		logging.info("Login event received")
 		
 	def handle_logout(self):
-		print("Logout event received")
+		logging.info("Logout event received")
 		
 if __name__== "__main__":
 	""" Test the dispatcher """
@@ -103,4 +113,25 @@ if __name__== "__main__":
 	
 	for event in dispatcher.events:
 		dispatcher.dispatch(event)
+		
+class TokenFileListener(object):
+	def __init__(self,tokenfile,osf):
+		super(TokenFileListener,self).__init__()
+		self.tokenfile = tokenfile
+		self.osf=osf
+	
+	def handle_login(self):
+		if self.osf.session.token:
+			tokenstr = json.dumps(self.osf.session.token)
+			with open(self.tokenfile,'w') as f:
+				f.write(tokenstr)
+		else:
+			logging.error("Error, could not find authentication token")
+
+	def handle_logout(self):
+		if os.path.isfile(self.tokenfile):
+			try:
+				os.remove(self.tokenfile)
+			except Exception as e:
+				logging.warning("WARNING: {}".format(e.message))
 	
