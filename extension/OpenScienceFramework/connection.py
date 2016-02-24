@@ -75,10 +75,27 @@ api_base_url = "https://test-api.osf.io/v2/"
 
 api_calls = {
 	"logged_in_user":"users/me",
+	"projects":"users/me/nodes",
+	"project_repos":"nodes/{}/files",
+	"repo_files":"nodes/{}/files/{}",
 }
 
-def api_call(command):
-	return api_base_url + api_calls[command]
+def api_call(command, *args):
+	""" generates and api endpoint. If arguments are required to build the endpoint, the can be
+	specified as extra arguments.
+
+	Parameters
+	----------
+	command : string
+		The key of the endpoint to look up in the api_calls dictionary
+	*args : various (optional)
+		Optional extra data which is needed to construct the correct api endpoint uri
+		
+	Returns
+	-------
+	string : The complete uri for the api endpoint
+	"""
+	return api_base_url + api_calls[command].format(*args)
 
 #%%--------------------------- Oauth communiucation ----------------------------
 
@@ -91,8 +108,13 @@ def logged_out():
 	logging.warning("User logged out! Overwrite this callback function withy your own custom one")
 
 def get_authorization_url():
-	""" Generate the URL with which one can authenticate at the OSF and allow 
-	OpenSesame access to his or her account."""
+	""" Generate the URL at which an OAuth2 token for the OSF can be requested
+	with which OpenSesame can be allowed access to the user's account.
+	
+	Returns
+	-------
+	string : The complete uri for the api endpoint
+	"""
 	return session.authorization_url(auth_url)
 	
 def parse_token_from_url(url):
@@ -130,10 +152,11 @@ def requires_authentication(func):
 		# for instance, a logout request is an empty HTTP (204) response which results
 		# in JSON decode error
 		try:
-			logging.info("Response status code {}".format(response.status_code))
 			response = response.json()
 		except Exception as e:
-			logging.info("Could not decode response to JSON: {}".format(e))
+			if response.status_code != 204:
+				logging.info("Response status code {}".format(response.status_code))
+				logging.info("Could not decode response to JSON: {}".format(e))
 		
 		# If json decoding succeeded, response is now a dict instead of a 
 		# HTTP responses class
@@ -160,6 +183,7 @@ def logout():
 	})
 	# Code 204 (empty response) signifies success
 	if resp.status_code == 204:
+		logging.info("User logged out")
 		# Reset session object
 		session = reset_session()
 		logged_out()
@@ -170,10 +194,21 @@ def logout():
 #%% Functions interacting with the OSF API	
 
 @requires_authentication
-def logged_in_user():
+def get_logged_in_user():
 	return session.get(api_call("logged_in_user"))
+
+@requires_authentication
+def get_user_projects():
+	return session.get(api_call("projects"))
 	
-		
+@requires_authentication	
+def get_project_repos(project_id):
+	return session.get(api_call("project_repos",project_id))
+
+@requires_authentication	
+def get_repo_files(project_id, repo_name):
+	return session.get(api_call("repo_files",project_id, repo_name))
+	
 if __name__ == "__main__":
 	print(get_authorization_url())
 	

@@ -27,7 +27,7 @@ import sys
 import logging
 
 # QT classes
-from PyQt4 import QtGui, QtCore, QtWebKit
+from qtpy import QtGui, QtCore, QtWebKit, QtWidgets
 # OSF connection interface
 import connection as osf
 # For performing HTTP requests
@@ -64,7 +64,7 @@ class LoginWindow(QtWebKit.QWebView):
 			if redirectUrl.hasFragment():
 				r_url = redirectUrl.toString()
 				if osf.redirect_uri in r_url:
-					print("Token URL: {}".format(r_url))
+					logging.info("Token URL: {}".format(r_url))
 					self.token = osf.parse_token_from_url(r_url)
 					if self.token:
 						self.close()
@@ -72,10 +72,10 @@ class LoginWindow(QtWebKit.QWebView):
 	def check_URL(self, url):
 		new_url = url.toEncoded()
 		
-		if not osf.base_url in new_url:
-			print("URL CHANGED: Unexpected url: {}".format(url))
+		if not osf.base_url in new_url and not osf.redirect_uri in new_url:
+			logging.warning("URL CHANGED: Unexpected url: {}".format(url))
 			
-class UserBadge(QtGui.QWidget):
+class UserBadge(QtWidgets.QWidget):
 	""" A Widget showing the logged in user """
 	
 	# Class variables
@@ -89,11 +89,9 @@ class UserBadge(QtGui.QWidget):
 	login_text = "Log in to OSF"
 	logout_text = "Log out"
 	
-	def __init__(self, connection=None):
+	def __init__(self):
 		super(UserBadge, self).__init__()
-		self.initUI()
-		
-	def initUI(self):
+
 		# Set up general window
 		self.resize(200,40)
 		self.setWindowTitle("User badge")
@@ -141,8 +139,8 @@ class UserBadge(QtGui.QWidget):
 			self.login_request.emit()
 		elif button.text() == self.logout_text:
 			button.setText("Logging out...")
+			QtCore.QCoreApplication.instance().processEvents()
 			self.logout_request.emit()
-			
 		
 	def handle_login(self):
 		self.check_user_status()
@@ -152,11 +150,12 @@ class UserBadge(QtGui.QWidget):
 			
 	def check_user_status(self):
 		if osf.is_authorized():
+			# Request logged in user's info
+			self.user = osf.get_logged_in_user()
 			# Get user's name
-			full_name = osf.logged_in_user()["data"]["attributes"]["full_name"]
-			
+			full_name = self.user["data"]["attributes"]["full_name"]
 			# Download avatar image from the specified url
-			avatar_url = osf.logged_in_user()["data"]["links"]["profile_image"]
+			avatar_url = self.user["data"]["links"]["profile_image"]
 			avatar_img = requests.get(avatar_url).content
 			pixmap = QtGui.QPixmap()
 			pixmap.loadFromData(avatar_img)
@@ -167,6 +166,100 @@ class UserBadge(QtGui.QWidget):
 			self.avatar.setPixmap(pixmap)
 			self.statusbutton.setText(self.logout_text)
 		else:
+			self.user = None
 			self.user_name.setText("")
 			self.avatar.setPixmap(self.osf_logo_pixmap)
 			self.statusbutton.setText(self.login_text)
+			
+			
+class Explorer(QtWidgets.QTreeWidget):
+	""" A tree represntation of project and files on the OSF for the current user
+	in a treeview """
+	
+	def __init__(self, *args, **kwars):
+		super(Explorer, self).__init__(*args, **kwars)
+		
+		# Set up general window
+		self.resize(400,500)
+		self.setWindowTitle("Project explorer")
+		
+		# Set Window icon
+		osf_logo = os.path.abspath('../../resources/img/cos-white2.png')
+		if not os.path.isfile(osf_logo):
+			print("ERROR: OSF logo not found at {}".format(osf_logo))
+		osf_icon = QtGui.QIcon(osf_logo)
+		self.setWindowIcon(osf_icon)
+		
+		# Set column labels
+		self.setHeaderLabels(["Name","Kind"])
+
+	def populate_tree(self):
+		osf_response = osf.get_user_projects()
+		
+		treeItems = []
+		for project in osf_response["data"]:
+			item = QtWidgets.QTreeWidgetItem(
+				self.invisibleRootItem(),
+				[
+					project["attributes"]["title"],
+					project["attributes"]["category"]
+				]
+			)
+			repos = self.get_repos(project["id"])			
+			item.addChildren(repos)
+			treeItems.append(item)			
+		self.addTopLevelItems(treeItems)
+		
+	def get_repos(self, node_id):
+		osf_response = osf.get_project_repos(node_id)
+		repos = []
+		for repo in osf_response["data"]:
+			item = QtWidgets.QTreeWidgetItem(
+				[
+					repo["attributes"]["name"],
+					repo["attributes"]["kind"]
+				]
+			)
+			files = self.get_repo_files(repo["attributes"]["node"], repo["attributes"]["name"])
+			item.addChildren(files)
+			repos.append(item)
+		return repos
+		
+	def get_repo_files(self,node_id,repo_name):
+		osf_response = osf.get_repo_files(node_id, repo_name)
+		files = []
+		for entry in osf_response["data"]:
+			if entry["attributes"]["kind"] == "file":
+				item = QtWidgets.QTreeWidgetItem(
+					[
+						entry["attributes"]["name"],
+						entry["attributes"]["kind"]
+					]
+				)
+				files.append(item)
+		return files
+			
+		
+	def handle_login(self):
+		self.populate_tree()
+		
+	def handle_logout(self):
+		self.clear()
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+
+		
+		
+	
+	

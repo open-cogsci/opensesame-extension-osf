@@ -30,8 +30,11 @@ import time
 import logging
 logging.basicConfig(level=logging.INFO)
 
+# Use Python3 string instead of deprecated QString
+
+
 # Required QT classes
-from PyQt4 import QtGui, QtCore
+from qtpy import QtGui, QtCore
 
 # Oauth2 connection to OSF
 import connection as osf
@@ -42,71 +45,94 @@ import widgets
 # Event dispatcher and listeners
 from util import EventDispatcher, TestListener, TokenFileListener
 
-def showLoginWindow(browser):
-	auth_url, state = osf.get_authorization_url()
-	logging.info("Generated authorization url: {}".format(auth_url))
+class StandAlone(object):
 	
-	# Set up browser
-	browser_url = QtCore.QUrl.fromEncoded(auth_url)
-	browser.load(browser_url)
-	browser.show()
+	def __init__(self):
+		# Init browser in which login page is displayed
+		self.browser = widgets.LoginWindow()
+		
+		# Init and set up user badge
+		self.user_badge = widgets.UserBadge()
+		self.user_badge.move(1100,100)
+		self.user_badge.show()
+		
+		# Init and set up Project explorer
+		self.project_explorer = widgets.Explorer()
+		self.project_explorer.move(50,200)
+		self.project_explorer.show()
+	
+		# Create event dispatcher
+		self.dispatcher = EventDispatcher()
+		
+		# Filename of the file to store token information in.
+		self.tokenfile = "token.json"	
+		
+		# Connect OSF logged_in callback function to EventDispatcher	
+		osf.logged_in = self.dispatcher.dispatch_login
+		# Connect OSF logged_out callback function to EventDispatcher
+		osf.logged_out = self.dispatcher.dispatch_logout
+		
+		# Testlistener (to be removed later). Simply prints out which event
+		# it received.
+		tl = TestListener()
+		# Token file listener writes the token to a json file if it receives
+		# a logged_in event and removes this file after logout
+		tfl = TokenFileListener(self.tokenfile, osf)
+		self.dispatcher.add([self.user_badge, self.project_explorer, tl, tfl])
+		
+		# Connect click on user badge logout button to osf logout action
+		self.user_badge.logout_request.connect(osf.logout)
+		self.user_badge.login_request.connect(self.show_login_window)
+		
+		# If a valid token is stored in token.json, use that.
+		# Otherwise show the loging window.
+		if not self.check_for_stored_token():
+			self.show_login_window()
+		else:
+			self.dispatcher.dispatch("login")
+		
+	def check_for_stored_token(self):
+		""" Checks if valid token information is stored in a token.json file.
+		of the project root. If not, or if the token is invalid/expired, it returns
+		False"""
+		
+		if os.path.isfile(self.tokenfile):
+			with open(self.tokenfile,"r") as f:
+				token = json.loads(f.read())
+				
+			# Check if token has not yet expired
+			if token["expires_at"] > time.time():
+				# Load the token information in the session object, but check its
+				# validity!
+				osf.session.token = token
+				# See if a request succeeds without errors
+				try:
+					osf.get_logged_in_user()
+					return True
+				except osf.TokenError as e:
+					logging.error(e.strerror)
+					osf.reset_session()
+					os.remove(self.tokenfile)
+			else:
+				logging.info("Token expired; need log-in")
+		return False
+		
+	def show_login_window(self):
+		""" Show the QWebView window with the login page of OSF """
+		auth_url, state = osf.get_authorization_url()
+		logging.info("Generated authorization url: {}".format(auth_url))
+		
+		# Set up browser
+		browser_url = QtCore.QUrl.fromEncoded(auth_url)
+		self.browser.load(browser_url)
+		self.browser.show()
 		
 if __name__ == "__main__":
-	""" Test if user can connect to OSF. Opens up a browser window in the form
-	of a QWebView window to do so."""
-	# Import QT libraries
-
 	app = QtGui.QApplication(sys.argv)
-	user_badge = widgets.UserBadge()
-	dispatcher = EventDispatcher()
-	browser = widgets.LoginWindow()
-	
-	tokenfile = "token.json"	
-	
-	# Set up user badge
-	user_badge.move(1100,100)
-	user_badge.show()
-
-	# Connect login events of browser to EventDispatcher's dispatch function	
-	osf.logged_in = dispatcher.dispatch_login
-	# Dispatch logout events
-	osf.logged_out = dispatcher.dispatch_logout
-	
-	tl = TestListener() # To be removed later	
-	tfl = TokenFileListener(tokenfile, osf)
-	dispatcher.add([user_badge, tl, tfl])
-	
-	# Connect click on user badge logout button to osf logout action
-	user_badge.logout_request.connect(osf.logout)
-	user_badge.login_request.connect(osf.login)
-	
-	if os.path.isfile(tokenfile):
-		with open(tokenfile,"r") as f:
-			token = json.loads(f.read())
-			
-		# Check if token has not yet expired
-		if token["expires_at"] > time.time():
-			# Load the token information in the session object, but check its
-			# validity!
-			osf.session.token = token
-			# See if a request succeeds without errors
-			try:
-				osf.logged_in_user()
-			except osf.TokenError as e:
-				logging.error(e.strerror)
-				osf.reset_session()
-				os.remove(tokenfile)
-		else:
-			logging.info("Token expired; need log-in")
-	
-	if not osf.is_authorized():
-		showLoginWindow(browser)
-	else:
-		dispatcher.dispatch("login")
-	
+	test = StandAlone()
 	exitcode = app.exec_()
 	logging.info("App exiting with code {}".format(exitcode))
-	#sys.exit(exitcode)
+	sys.exit(exitcode)
 	
 
 

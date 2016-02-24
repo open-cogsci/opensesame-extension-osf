@@ -28,6 +28,7 @@ from libqtopensesame.extensions import base_extension
 __author__ = u"Daniel Schreij"
 __license__ = u"Apache2"
 
+# Use Python3 string instead of deprecated QString
 class OpenScienceFramework(base_extension):
 	def __init__(self):
 		pass
