@@ -28,6 +28,10 @@ import logging
 
 # QT classes
 from qtpy import QtGui, QtCore, QtWebKit, QtWidgets
+# Font Awesome icons for QT
+import qtawesome as qta
+# Mimetypes for file type recognition
+import mimetypes
 # OSF connection interface
 import connection as osf
 # For performing HTTP requests
@@ -70,7 +74,7 @@ class LoginWindow(QtWebKit.QWebView):
 						self.close()
 		
 	def check_URL(self, url):
-		new_url = url.toEncoded()
+		new_url = url.toString()
 		
 		if not osf.base_url in new_url and not osf.redirect_uri in new_url:
 			logging.warning("URL CHANGED: Unexpected url: {}".format(url))
@@ -101,30 +105,30 @@ class UserBadge(QtWidgets.QWidget):
 		if not os.path.isfile(osf_logo):
 			print("ERROR: OSF logo not found at {}".format(osf_logo))
 
-		self.osf_logo_pixmap = QtGui.QPixmap(osf_logo)	.scaled(self.image_size)
+		self.osf_logo_pixmap = QtGui.QPixmap(osf_logo).scaled(self.image_size)
 		
 		osf_icon = QtGui.QIcon(osf_logo)
 		self.setWindowIcon(osf_icon)
 		
 		## Set up labels
 		# User's name
-		self.user_name = QtGui.QLabel()
+		self.user_name = QtWidgets.QLabel()
 		# User's avatar
-		self.avatar = QtGui.QLabel()
+		self.avatar = QtWidgets.QLabel()
 		
 		# Login button
-		self.statusbutton = QtGui.QPushButton(self)
+		self.statusbutton = QtWidgets.QPushButton(self)
 		self.statusbutton.clicked.connect(self.__handle_click)
 		
 		# Determine content of labels:
 		self.check_user_status()
 		
 		# Set up layout
-		grid = QtGui.QGridLayout()
+		grid = QtWidgets.QGridLayout()
 		grid.setSpacing(5)
 		grid.addWidget(self.avatar,1,0)
 		
-		login_grid = QtGui.QGridLayout()
+		login_grid = QtWidgets.QGridLayout()
 		login_grid.setSpacing(5)
 		login_grid.addWidget(self.user_name,1,1)
 		login_grid.addWidget(self.statusbutton,2,1)
@@ -192,56 +196,80 @@ class Explorer(QtWidgets.QTreeWidget):
 		
 		# Set column labels
 		self.setHeaderLabels(["Name","Kind"])
+		self.setColumnWidth(0,300)
 
-	def populate_tree(self):
-		osf_response = osf.get_user_projects()
-		
+	def get_icon(self, datatype, name):
+		if datatype == "project":
+			return qta.icon('fa.cubes')
+		if datatype == "folder":
+			if name == "osfstorage":
+				return qta.icon('fa.connectdevelop')
+			if name == "github":
+				return qta.icon('fa.github')
+			if name == "dropbox":
+				return qta.icon('fa.dropbox')
+			if name == "googledrive":
+				return qta.icon('fa.google')
+			else:
+				return qta.icon('fa.folder-open-o')
+		if datatype == "file":
+			filetype, encoding = mimetypes.guess_type(name)
+			if filetype:
+				if "image" in filetype:
+					return qta.icon('fa.file-image-o')
+				if "pdf" in filetype:
+					return qta.icon('fa.file-pdf-o')
+				if "text/x-" in filetype:
+					return qta.icon('fa.file-code-o')
+				if "msword" in filetype or \
+					"officedocument.wordprocessingml" in filetype or \
+					"opendocument.text" in filetype:
+					return qta.icon('fa.file-word-o')
+				if "powerpoint" in filetype or \
+					"officedocument.presentationml" in filetype or \
+					"opendocument.presentation" in filetype:
+					return qta.icon('fa.file-word-o')
+				if "zip" in filetype or "x-tar" in filetype\
+					or "compressed" in filetype:
+					return qta.icon('fa.file-archive-o')
+				if "video" in filetype:
+					return qta.icon('fa.file-video-o')
+				else:
+					return qta.icon('fa.file-o') 
+		else:
+			return qta.icon('fa.file-o') 
+
+	def populate_tree(self, entrypoint, parent=None):
+		osf_response = osf.direct_api_call(entrypoint)
 		treeItems = []
-		for project in osf_response["data"]:
-			item = QtWidgets.QTreeWidgetItem(
-				self.invisibleRootItem(),
-				[
-					project["attributes"]["title"],
-					project["attributes"]["category"]
-				]
-			)
-			repos = self.get_repos(project["id"])			
-			item.addChildren(repos)
-			treeItems.append(item)			
-		self.addTopLevelItems(treeItems)
-		
-	def get_repos(self, node_id):
-		osf_response = osf.get_project_repos(node_id)
-		repos = []
-		for repo in osf_response["data"]:
-			item = QtWidgets.QTreeWidgetItem(
-				[
-					repo["attributes"]["name"],
-					repo["attributes"]["kind"]
-				]
-			)
-			files = self.get_repo_files(repo["attributes"]["node"], repo["attributes"]["name"])
-			item.addChildren(files)
-			repos.append(item)
-		return repos
-		
-	def get_repo_files(self,node_id,repo_name):
-		osf_response = osf.get_repo_files(node_id, repo_name)
-		files = []
+
+		if parent is None:
+			parent = self.invisibleRootItem()
+
 		for entry in osf_response["data"]:
-			if entry["attributes"]["kind"] == "file":
-				item = QtWidgets.QTreeWidgetItem(
-					[
-						entry["attributes"]["name"],
-						entry["attributes"]["kind"]
-					]
-				)
-				files.append(item)
-		return files
-			
+			if entry['type'] == 'nodes':
+				name = entry["attributes"]["title"]
+				kind = entry["attributes"]["category"]
+			if entry['type'] == 'files':
+				name = entry["attributes"]["name"]
+				kind = entry["attributes"]["kind"]
+
+			item = QtWidgets.QTreeWidgetItem(parent,[name,kind])
+			icon = self.get_icon(kind, name)
+			item.setIcon(0,icon)
+
+			if kind in ["project","folder"]:
+				next_entrypoint = entry['relationships']['files']['links']['related']['href']
+				children = self.populate_tree(next_entrypoint, item)	
+				item.addChildren(children)
+			treeItems.append(item)
+		return treeItems	
 		
 	def handle_login(self):
-		self.populate_tree()
+		logged_in_user = osf.get_logged_in_user()
+		# Get url to user projects. Use that as entry point to populate the tree
+		user_nodes_api_call = logged_in_user['data']['relationships']['nodes']['links']['related']['href']
+		self.populate_tree(user_nodes_api_call)
 		
 	def handle_logout(self):
 		self.clear()

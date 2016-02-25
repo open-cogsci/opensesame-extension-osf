@@ -30,11 +30,8 @@ import time
 import logging
 logging.basicConfig(level=logging.INFO)
 
-# Use Python3 string instead of deprecated QString
-
-
 # Required QT classes
-from qtpy import QtGui, QtCore
+from qtpy import QtWidgets, QtCore
 
 # Oauth2 connection to OSF
 import connection as osf
@@ -53,12 +50,12 @@ class StandAlone(object):
 		
 		# Init and set up user badge
 		self.user_badge = widgets.UserBadge()
-		self.user_badge.move(1100,100)
+		self.user_badge.move(500,100)
 		self.user_badge.show()
 		
 		# Init and set up Project explorer
 		self.project_explorer = widgets.Explorer()
-		self.project_explorer.move(50,200)
+		self.project_explorer.move(50,100)
 		self.project_explorer.show()
 	
 		# Create event dispatcher
@@ -121,19 +118,17 @@ class StandAlone(object):
 		""" Show the QWebView window with the login page of OSF """
 		auth_url, state = osf.get_authorization_url()
 		logging.info("Generated authorization url: {}".format(auth_url))
-		
 		# Set up browser
-		browser_url = QtCore.QUrl.fromEncoded(auth_url)
+		browser_url = QtCore.QUrl(auth_url)
 		self.browser.load(browser_url)
 		self.browser.show()
 		
 if __name__ == "__main__":
-	app = QtGui.QApplication(sys.argv)
+	app = QtWidgets.QApplication(sys.argv)
 	test = StandAlone()
 	exitcode = app.exec_()
 	logging.info("App exiting with code {}".format(exitcode))
 	sys.exit(exitcode)
-	
 
 
 

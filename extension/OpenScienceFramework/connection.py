@@ -208,6 +208,10 @@ def get_project_repos(project_id):
 @requires_authentication	
 def get_repo_files(project_id, repo_name):
 	return session.get(api_call("repo_files",project_id, repo_name))
+
+@requires_authentication
+def direct_api_call(api_call):
+	return session.get(api_call)
 	
 if __name__ == "__main__":
 	print(get_authorization_url())
