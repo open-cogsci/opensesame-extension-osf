@@ -50,11 +50,11 @@ class StandAlone(object):
 		
 		# Init and set up user badge
 		self.user_badge = widgets.UserBadge()
-		self.user_badge.move(500,100)
+		self.user_badge.move(850,100)
 		self.user_badge.show()
 		
 		# Init and set up Project explorer
-		self.project_explorer = widgets.Explorer()
+		self.project_explorer = widgets.ProjectExplorer()
 		self.project_explorer.move(50,100)
 		self.project_explorer.show()
 	
@@ -107,7 +107,7 @@ class StandAlone(object):
 					osf.get_logged_in_user()
 					return True
 				except osf.TokenError as e:
-					logging.error(e.strerror)
+					logging.error(e)
 					osf.reset_session()
 					os.remove(self.tokenfile)
 			else:
@@ -125,6 +125,11 @@ class StandAlone(object):
 		
 if __name__ == "__main__":
 	app = QtWidgets.QApplication(sys.argv)
+	
+	# Enable High DPI display with PyQt5
+	if hasattr(QtCore.Qt, 'AA_UseHighDpiPixmaps'):
+		app.setAttribute(QtCore.Qt.AA_UseHighDpiPixmaps)
+								
 	test = StandAlone()
 	exitcode = app.exec_()
 	logging.info("App exiting with code {}".format(exitcode))

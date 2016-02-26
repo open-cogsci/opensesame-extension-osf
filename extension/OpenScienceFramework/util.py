@@ -61,7 +61,7 @@ class EventDispatcher(object):
 		for event in self.events:
 			if not hasattr(item,"handle_"+event) or not inspect.ismethod(getattr(item,"handle_"+event)):
 				raise NameError("{} does not have the required function {}".\
-					format(item.__name__, "handle_"+event))
+					format(item.__class__.__name__, "handle_"+event))
 	
 	def add(self, obj):
 		""" Add (a) new object(s) to the list of objects listening for the events 

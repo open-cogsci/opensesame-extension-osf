@@ -42,6 +42,7 @@ class LoginWindow(QtWebKit.QWebView):
 	# Login event is emitted after successfull login
 	
 	def __init__(self):
+		""" Constructor """
 		super(LoginWindow, self).__init__()
 		
 		# Create Network Access Manager to listen to all outgoing
@@ -58,6 +59,12 @@ class LoginWindow(QtWebKit.QWebView):
 		self.nam.finished.connect(self.checkResponse)
 		
 	def checkResponse(self,reply):
+		"""Callback function for NetworkRequestManager.finished event
+		
+		Parameters
+		----------
+		reply : The HTTPResponse object provided by NetworkRequestManager
+		"""
 		request = reply.request()
 		# Get the HTTP statuscode for this response
 		statuscode = reply.attribute(request.HttpStatusCodeAttribute)
@@ -74,6 +81,14 @@ class LoginWindow(QtWebKit.QWebView):
 						self.close()
 		
 	def check_URL(self, url):
+		""" Callback function for urlChanged event.
+		
+		Parameters
+		----------
+		command : url
+			New url, provided by the urlChanged event
+		
+		"""
 		new_url = url.toString()
 		
 		if not osf.base_url in new_url and not osf.redirect_uri in new_url:
@@ -94,6 +109,7 @@ class UserBadge(QtWidgets.QWidget):
 	logout_text = "Log out"
 	
 	def __init__(self):
+		""" Constructor """
 		super(UserBadge, self).__init__()
 
 		# Set up general window
@@ -147,12 +163,17 @@ class UserBadge(QtWidgets.QWidget):
 			self.logout_request.emit()
 		
 	def handle_login(self):
+		""" Callback function for EventDispatcher when a login event is detected """
 		self.check_user_status()
 			
 	def handle_logout(self):
+		""" Callback function for EventDispatcher when a logout event is detected """
 		self.check_user_status()			
 			
 	def check_user_status(self):
+		""" Checks the current status of the user and adjusts the contents of 
+		the badge accordingly."""
+		
 		if osf.is_authorized():
 			# Request logged in user's info
 			self.user = osf.get_logged_in_user()
@@ -175,17 +196,117 @@ class UserBadge(QtWidgets.QWidget):
 			self.avatar.setPixmap(self.osf_logo_pixmap)
 			self.statusbutton.setText(self.login_text)
 			
-			
-class Explorer(QtWidgets.QTreeWidget):
-	""" A tree represntation of project and files on the OSF for the current user
-	in a treeview """
+
+class ProjectExplorer(QtWidgets.QWidget):
+	""" An explorer of the current user's OSF account """
+	
+	preview_size = QtCore.QSize(150,150)
 	
 	def __init__(self, *args, **kwars):
-		super(Explorer, self).__init__(*args, **kwars)
+		""" Constructor """
+		super(ProjectExplorer, self).__init__(*args, **kwars)
+		
+		self.setWindowTitle("Project explorer")
+		self.resize(800,500)
+		# Set Window icon
+		osf_logo = os.path.abspath('../../resources/img/cos-white2.png')
+		if not os.path.isfile(osf_logo):
+			print("ERROR: OSF logo not found at {}".format(osf_logo))
+		osf_icon = QtGui.QIcon(osf_logo)
+		self.setWindowIcon(osf_icon)
+		
+		# globally accessible items
+		self.tree = ProjectTree()
+		self.properties_grid = self.__create_properties_pane()
+		self.image_space = QtWidgets.QLabel()
+		self.image_space.setAlignment(QtCore.Qt.AlignCenter)
+		
+		# Create layouts
+		hbox = QtWidgets.QHBoxLayout(self)
+		
+		# Grid layout for the info consisting of an image space and the
+		# properties grid
+		info_grid = QtWidgets.QGridLayout()
+		info_grid.setSpacing(5)
+		info_grid.addWidget(self.image_space,1,1)
+		info_grid.addLayout(self.properties_grid,2,1)
+		
+		# The widget to hold the infogrid
+		info_frame = QtWidgets.QWidget()
+		info_frame.resize(400,250)
+		info_frame.setLayout(info_grid)
+		
+		splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+		splitter.addWidget(self.tree)
+		splitter.addWidget(info_frame)
+		
+		hbox.addWidget(splitter)
+		self.setLayout(hbox)
+		
+		# Event connections
+		self.tree.itemClicked.connect(self.item_clicked)
+		
+	def __create_properties_pane(self):
+		# Box to show the properties of the selected item
+		properties_grid = QtWidgets.QGridLayout()
+		properties_grid.setSpacing(5)
+		
+		nameLabel = QtWidgets.QLabel('Name')
+		typeLabel = QtWidgets.QLabel('Type')
+		
+		self.nameValue = QtWidgets.QLabel('')
+		self.typeValue = QtWidgets.QLabel('')
+		
+		# Labels
+		properties_grid.addWidget(nameLabel,1,1)
+		properties_grid.addWidget(typeLabel,2,1)
+		
+		# Values
+		properties_grid.addWidget(self.nameValue,1,2)
+		properties_grid.addWidget(self.typeValue,2,2)
+		
+		return properties_grid
+		
+		
+	def item_clicked(self,item,col):
+		data = item.data
+		if data['type'] == 'nodes':
+			name = data["attributes"]["title"]
+			kind = data["attributes"]["category"]
+		if data['type'] == 'files':
+			name = data["attributes"]["name"]
+			kind = data["attributes"]["kind"]
+
+		pm = self.tree.get_icon(kind, name).pixmap(self.preview_size)
+		self.image_space.setPixmap(pm)
+		
+		# Set name
+		self.nameValue.setText(name)
+		# Set label
+		self.typeValue.setText(kind)
+		
+		
+	def handle_login(self):
+		self.tree.handle_login()
+		
+	def handle_logout(self):
+		""" Callback function for EventDispatcher when a logout event is detected """
+		self.tree.handle_logout()
+		self.image_space.setPixmap(QtGui.QPixmap())
+		self.nameValue.setText("")
+		self.typeValue.setText("")
+		
+			
+class ProjectTree(QtWidgets.QTreeWidget):
+	""" A tree representation of projects and files on the OSF for the current user
+	in a treeview widget"""
+	
+	def __init__(self, *args, **kwars):
+		""" Constructor """
+		super(ProjectTree, self).__init__(*args, **kwars)
 		
 		# Set up general window
 		self.resize(400,500)
-		self.setWindowTitle("Project explorer")
 		
 		# Set Window icon
 		osf_logo = os.path.abspath('../../resources/img/cos-white2.png')
@@ -197,49 +318,111 @@ class Explorer(QtWidgets.QTreeWidget):
 		# Set column labels
 		self.setHeaderLabels(["Name","Kind"])
 		self.setColumnWidth(0,300)
+		
+		# Event handling
+		self.itemExpanded.connect(self.set_expanded_icon)
+		self.itemCollapsed.connect(self.set_collapsed_icon)
+		
+		self.setIconSize(QtCore.QSize(20,20))
+		
+	def set_expanded_icon(self,item):
+		if item.data['type'] == 'files' and item.data['attributes']['kind'] == 'folder':
+			item.setIcon(0,self.get_icon('folder-open',item.data['attributes']['name']))
+		
+	def set_collapsed_icon(self,item):
+		if item.data['type'] == 'files' and item.data['attributes']['kind'] == 'folder':
+			item.setIcon(0,self.get_icon('folder',item.data['attributes']['name']))
+		
 
 	def get_icon(self, datatype, name):
-		if datatype == "project":
-			return qta.icon('fa.cubes')
-		if datatype == "folder":
-			if name == "osfstorage":
-				return qta.icon('fa.connectdevelop')
-			if name == "github":
-				return qta.icon('fa.github')
-			if name == "dropbox":
-				return qta.icon('fa.dropbox')
-			if name == "googledrive":
-				return qta.icon('fa.google')
+		""" 
+		Retrieves the icon for a certain object (project, folder) or filetype.
+		Uses mimetypes to determine the file type.
+		
+		Parameters
+		----------
+		datatype : string
+			The kind of object, which can be project, folder or file
+		name : string
+			The name of the object, which is the project, folder or file name
+			
+		Returns
+		-------
+		QIcon : The icon for the current file/objec type """
+		
+		providers = {
+			'osfstorage':'fa.connectdevelop',
+			'github':'fa.github',
+			'dropbox':'fa.dropbox',
+			'googledrive':'fa.google'
+		}
+		
+		if datatype == 'project':
+			icon = 'fa.cubes'
+		elif datatype == "folder":
+			if name in providers:
+				icon = providers[name]
 			else:
-				return qta.icon('fa.folder-open-o')
-		if datatype == "file":
+				icon = 'fa.folder-o'
+		elif datatype == "folder-open":
+			if name in providers:
+				icon = providers[name]
+			else:
+				icon = 'fa.folder-open-o'
+		elif datatype == "file":
 			filetype, encoding = mimetypes.guess_type(name)
 			if filetype:
 				if "image" in filetype:
-					return qta.icon('fa.file-image-o')
-				if "pdf" in filetype:
-					return qta.icon('fa.file-pdf-o')
-				if "text/x-" in filetype:
-					return qta.icon('fa.file-code-o')
-				if "msword" in filetype or \
+					icon = 'fa.file-image-o'
+				elif "pdf" in filetype:
+					icon = 'fa.file-pdf-o'
+				elif "text/x-" in filetype:
+					icon = 'fa.file-code-o'
+				elif "text/plain" in filetype:
+					icon = 'fa.file-text-o'
+				elif "msword" in filetype or \
 					"officedocument.wordprocessingml" in filetype or \
 					"opendocument.text" in filetype:
-					return qta.icon('fa.file-word-o')
-				if "powerpoint" in filetype or \
-					"officedocument.presentationml" in filetype or \
-					"opendocument.presentation" in filetype:
-					return qta.icon('fa.file-word-o')
-				if "zip" in filetype or "x-tar" in filetype\
+					icon = 'fa.file-word-o'
+				elif "powerpoint" in filetype or \
+					"presentation" in filetype:
+					icon = 'fa.file-powerpoint-o'
+				elif "excel" in filetype or \
+					"spreadsheet" in filetype:
+					icon = 'fa.file-excel-o'				
+				elif "zip" in filetype or "x-tar" in filetype\
 					or "compressed" in filetype:
-					return qta.icon('fa.file-archive-o')
-				if "video" in filetype:
-					return qta.icon('fa.file-video-o')
+					icon = 'fa.file-archive-o'
+				elif "video" in filetype:
+					icon = 'fa.file-video-o'
+				elif "audio" in filetype:
+					icon = 'fa.file-video-o'
 				else:
-					return qta.icon('fa.file-o') 
+					icon = 'fa.file-o'
 		else:
-			return qta.icon('fa.file-o') 
+			icon = 'fa.file-o'
+		return qta.icon(icon)
 
 	def populate_tree(self, entrypoint, parent=None):
+		""" 
+		Populates the tree with content retrieved from a certain entrypoint, 
+		specified as an api endpoint of the OSF, such a a project or certain 
+		folder inside a project. The JSON representation that the api endpoint 
+		returns is used to build the tree contents.
+		
+		Parameters
+		----------
+		entrypoint : string
+			uri to the OSF api from where the 
+		parent : QtWidgets.QTreeWidgetItem (options)
+			The parent item to which the generated tree should be attached.
+			Is mainly used for the recursiveness that this function implements.
+			If not specified the invisibleRootItem() is used as a parent.
+			
+		Returns
+		-------
+		list : The list of tree items that have just been generated """
+		
 		osf_response = osf.direct_api_call(entrypoint)
 		treeItems = []
 
@@ -257,6 +440,7 @@ class Explorer(QtWidgets.QTreeWidget):
 			item = QtWidgets.QTreeWidgetItem(parent,[name,kind])
 			icon = self.get_icon(kind, name)
 			item.setIcon(0,icon)
+			item.data = entry
 
 			if kind in ["project","folder"]:
 				next_entrypoint = entry['relationships']['files']['links']['related']['href']
@@ -265,13 +449,19 @@ class Explorer(QtWidgets.QTreeWidget):
 			treeItems.append(item)
 		return treeItems	
 		
+	#
+	# Event handling functions required by EventDispatcher	
+	#
+		
 	def handle_login(self):
+		""" Callback function for EventDispatcher when a login event is detected """
 		logged_in_user = osf.get_logged_in_user()
 		# Get url to user projects. Use that as entry point to populate the tree
 		user_nodes_api_call = logged_in_user['data']['relationships']['nodes']['links']['related']['href']
 		self.populate_tree(user_nodes_api_call)
 		
 	def handle_logout(self):
+		""" Callback function for EventDispatcher when a logout event is detected """
 		self.clear()
 		
 		
