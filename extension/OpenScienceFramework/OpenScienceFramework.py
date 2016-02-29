@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 """
+@author: Daniel Schreij
+
 This file is part of OpenSesame.
 
 OpenSesame is free software: you can redistribute it and/or modify
