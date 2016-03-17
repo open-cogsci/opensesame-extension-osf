@@ -30,13 +30,53 @@ from libqtopensesame.extensions import base_extension
 __author__ = u"Daniel Schreij"
 __license__ = u"Apache2"
 
-# Use Python3 string instead of deprecated QString
+from openscienceframework import widgets, events, manager
+import os
+
 class OpenScienceFramework(base_extension):
-	def __init__(self):
-		pass
+
+	def event_startup(self):
+		tokenfile = os.path.abspath("token.json")
+		# Create manager object
+		self.manager = manager.ConnectionManager(tokenfile)
+
+		# Init and set up user badge
+		self.user_badge = widgets.UserBadge(self.manager)
+
+		# Set-up project tree
+		project_tree = widgets.ProjectTree(self.manager)
+
+		# Save osf_icon for later usage
+		self.osf_icon = project_tree.get_icon('folder', 'osfstorage')
+
+		# Init and set up Project explorer
+		# Pass it the project tree instance from
+		self.project_explorer = widgets.OSFExplorer(
+			self.manager, tree_widget=project_tree
+		)
+
+		# Token file listener writes the token to a json file if it receives
+		# a logged_in event and removes this file after logout
+		# Filename of the file to store token information in.
+		self.tfl = events.TokenFileListener(tokenfile)
+
+		self.manager.dispatcher.add_listeners(
+			[
+				self.tfl, project_tree,
+				self.user_badge, self.project_explorer
+			]
+		)
+		# Connect click on user badge logout button to osf logout action
+		self.user_badge.logout_request.connect(self.manager.logout)
+		self.user_badge.login_request.connect(self.manager.login)
+
+		# Show the user badge
+		self.toolbar.addWidget(self.user_badge)
 	
 	def activate(self):
-		debug.msg(u'OSF extension activated')
+		""" Show OSF Explorer in full glory (all possibilities enabled """
+		self.tabwidget.add(self.project_explorer, self.osf_icon, 'OSF Explorer')
+		#self.project_explorer.show()
 	
 	def event_save_experiment(self, path):
 		debug.msg(u'OSF: Event caught: save_experiment(path=%s)' % path)

@@ -1,6 +1,6 @@
 label: OpenScienceFramework
 icon: folder-remote
-tooltip: Connect to the OSF
+tooltip: Explore your OSF repositories
 menu:
   index: 0
   separator_after: false
