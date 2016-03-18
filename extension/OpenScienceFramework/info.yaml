@@ -1,11 +1,14 @@
-label: OpenScienceFramework
+label: Explore
+version: 0.1.0
+author: Daniel Schreij
+link : https://github.com/dschreij/opensesame-osf
 icon: folder-remote
 tooltip: Explore your OSF repositories
 menu:
-  index: 0
+  index: 1
   separator_after: false
   separator_before: false
-  submenu: Example
+  submenu: OSF
 toolbar:
   index: -1
   separator_after: false

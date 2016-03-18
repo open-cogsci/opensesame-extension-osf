@@ -24,8 +24,12 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
+from qtpy.QtWidgets import QMenu, QToolBar
+
 from libopensesame import debug
 from libqtopensesame.extensions import base_extension
+from libqtopensesame.misc.translate import translation_context
+_ = translation_context(u'undo_manager', category=u'extension')
 
 __author__ = u"Daniel Schreij"
 __license__ = u"Apache2"
@@ -35,13 +39,37 @@ import os
 
 class OpenScienceFramework(base_extension):
 
+	### OpenSesame events
 	def event_startup(self):
+		self.__initialize()
+	
+	def activate(self):
+		""" Show OSF Explorer in full glory (all possibilities enabled) """
+		config = {'mode':'full'}
+		self.project_explorer.config = config
+		self.__show_explorer_tab()
+	
+	def event_save_experiment(self, path):
+		debug.msg(u'OSF: Event caught: save_experiment(path=%s)' % path)
+
+	### Other events
+	def handle_login(self):
+		self.save_to_osf.setDisabled(False)
+		self.open_from_osf.setDisabled(False)
+
+	def handle_logout(self):
+		self.save_to_osf.setDisabled(True)
+		self.open_from_osf.setDisabled(True)
+
+	### Private functions
+	def __initialize(self):
 		tokenfile = os.path.abspath("token.json")
 		# Create manager object
 		self.manager = manager.ConnectionManager(tokenfile)
 
 		# Init and set up user badge
-		self.user_badge = widgets.UserBadge(self.manager)
+		icon_size = self.toolbar.iconSize()
+		self.user_badge = widgets.UserBadge(self.manager, icon_size)
 
 		# Set-up project tree
 		project_tree = widgets.ProjectTree(self.manager)
@@ -62,7 +90,7 @@ class OpenScienceFramework(base_extension):
 
 		self.manager.dispatcher.add_listeners(
 			[
-				self.tfl, project_tree,
+				self, self.tfl, project_tree,
 				self.user_badge, self.project_explorer
 			]
 		)
@@ -72,14 +100,36 @@ class OpenScienceFramework(base_extension):
 
 		# Show the user badge
 		self.toolbar.addWidget(self.user_badge)
-	
-	def activate(self):
-		""" Show OSF Explorer in full glory (all possibilities enabled """
+
+		# Save to OSF menu item
+		self.save_to_osf = self.qaction(u'go-up', _(u'Save to OSF'), self.__save_exp,
+			tooltip=_(u'Save an experiment to the OpenScienceFramework'))
+		self.save_to_osf.setDisabled(True)
+
+		# Open from OSF menu item
+		self.open_from_osf = self.qaction(u'go-down', _(u'Open from OSF'), self.__open_exp,
+			tooltip=_(u'Open an experiment stored on the OpenScienceFramework'))
+		self.open_from_osf.setDisabled(True)
+
+		# Add other actions to menu
+		for w in self.action.associatedWidgets():
+			if not isinstance(w, QMenu):
+				continue
+			w.addAction(self.save_to_osf)
+			w.addAction(self.open_from_osf)
+
+	def __show_explorer_tab(self):
 		self.tabwidget.add(self.project_explorer, self.osf_icon, 'OSF Explorer')
-		#self.project_explorer.show()
-	
-	def event_save_experiment(self, path):
-		debug.msg(u'OSF: Event caught: save_experiment(path=%s)' % path)
+
+	def __open_exp(self, *args, **kwargs):
+		config = {'mode':'open'}
+		self.project_explorer.config = config
+		self.__show_explorer_tab()
+		
+	def __save_exp(self, *args, **kwargs):
+		config = {'mode':'save'}
+		self.project_explorer.config = config
+		self.__show_explorer_tab()
 		
 	
 	
