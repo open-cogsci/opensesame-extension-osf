@@ -24,7 +24,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from qtpy.QtWidgets import QMenu, QToolBar
+from qtpy import QtWidgets
 
 from libopensesame import debug
 from libqtopensesame.extensions import base_extension
@@ -39,13 +39,15 @@ import os
 
 class OpenScienceFramework(base_extension):
 
+	OpenSesame_filetypes = ['*.osexp','*.opensesame','*.opensesame.tar.gz']
+
 	### OpenSesame events
 	def event_startup(self):
 		self.__initialize()
 	
 	def activate(self):
 		""" Show OSF Explorer in full glory (all possibilities enabled) """
-		config = {'mode':'full'}
+		config = {'buttonset':'default','filter': None}
 		self.project_explorer.config = config
 		self.__show_explorer_tab()
 	
@@ -56,10 +58,12 @@ class OpenScienceFramework(base_extension):
 	def handle_login(self):
 		self.save_to_osf.setDisabled(False)
 		self.open_from_osf.setDisabled(False)
+		self.action.setDisabled(False)
 
 	def handle_logout(self):
 		self.save_to_osf.setDisabled(True)
 		self.open_from_osf.setDisabled(True)
+		self.action.setDisabled(True)
 
 	### Private functions
 	def __initialize(self):
@@ -82,6 +86,8 @@ class OpenScienceFramework(base_extension):
 		self.project_explorer = widgets.OSFExplorer(
 			self.manager, tree_widget=project_tree
 		)
+
+		self.__setup_buttons(self.project_explorer)
 
 		# Token file listener writes the token to a json file if it receives
 		# a logged_in event and removes this file after logout
@@ -113,21 +119,37 @@ class OpenScienceFramework(base_extension):
 
 		# Add other actions to menu
 		for w in self.action.associatedWidgets():
-			if not isinstance(w, QMenu):
+			if not isinstance(w, QtWidgets.QMenu):
 				continue
 			w.addAction(self.save_to_osf)
 			w.addAction(self.open_from_osf)
+		self.action.setDisabled(True)
+
+	def __setup_buttons(self, explorer):
+		# Link to OpenSesame buttons
+		self.__button_link_to_osf = QtWidgets.QPushButton(_('Save to OSF'))
+		explorer.add_buttonset('link',[self.__button_link_to_osf])
+		
+		# Open from OSF buttons
+		self.__button_open_from_osf = QtWidgets.QPushButton(_('Open from OSF'))
+		explorer.add_buttonset('open',[self.__button_open_from_osf])
 
 	def __show_explorer_tab(self):
 		self.tabwidget.add(self.project_explorer, self.osf_icon, 'OSF Explorer')
 
 	def __open_exp(self, *args, **kwargs):
-		config = {'mode':'open'}
+		config = {
+			'buttonset':'open',
+			'filter': self.OpenSesame_filetypes
+		}
 		self.project_explorer.config = config
 		self.__show_explorer_tab()
 		
 	def __save_exp(self, *args, **kwargs):
-		config = {'mode':'save'}
+		config = {
+			'buttonset':'link',
+			'filter': self.OpenSesame_filetypes
+		}
 		self.project_explorer.config = config
 		self.__show_explorer_tab()
 		
