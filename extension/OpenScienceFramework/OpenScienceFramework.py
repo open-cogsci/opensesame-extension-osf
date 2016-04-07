@@ -24,12 +24,12 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from qtpy import QtWidgets, QtCore
+from qtpy import QtWidgets, QtCore, QtGui
 
 from libopensesame import debug
 from libqtopensesame.extensions import base_extension
 from libqtopensesame.misc.translate import translation_context
-_ = translation_context(u'undo_manager', category=u'extension')
+_ = translation_context(u'OpenScienceFramework', category=u'extension')
 
 __author__ = u"Daniel Schreij"
 __license__ = u"Apache2"
@@ -47,7 +47,7 @@ class OpenScienceFramework(base_extension):
 	
 	def activate(self):
 		""" Show OSF Explorer with  default buttons enabled """
-		self.__set_full_mode()
+		self.__show_explorer_tab()
 	
 	def event_save_experiment(self, path):
 		""" See if experiment needs to be synced to OSF """
@@ -116,37 +116,52 @@ class OpenScienceFramework(base_extension):
 		# Show the user badge
 		self.toolbar.addWidget(self.user_badge)
 
-		# # Save to OSF menu item
-		# self.save_to_osf = self.qaction(u'go-up', _(u'Save to OSF'), 
-		# 	self.__set_save_expirment_mode,
-		# 	tooltip=_(u'Save an experiment to the OpenScienceFramework'))
-		# self.save_to_osf.setDisabled(True)
-
-		# # Open from OSF menu item
-		# self.open_from_osf = self.qaction(u'go-down', _(u'Open from OSF'), 
-		# 	self.__set_open_experiment_mode,
-		# 	tooltip=_(u'Open an experiment stored on the OpenScienceFramework'))
-		# self.open_from_osf.setDisabled(True)
-
 		# Add other actions to menu
 		for w in self.action.associatedWidgets():
 			if not isinstance(w, QtWidgets.QMenu):
 				continue
 			w.addAction(self.save_to_osf)
 			w.addAction(self.open_from_osf)
-		self.action.setDisabled(True)
+		# self.action.setDisabled(True)
 		self.current_mode = u"full"
 
 	def __setup_buttons(self, explorer):
 		# Link to OpenSesame buttons
-		self.__button_link_to_osf = QtWidgets.QPushButton(_(u'Link to OSF'))
+		
+		self.__button_link_to_osf = QtWidgets.QPushButton(_(u'Link this experiment to folder'))
+		self.__button_link_to_osf.setIcon(QtGui.QIcon.fromTheme('insert-link'))
 		self.__button_link_to_osf.clicked.connect(self.__link_experiment_to_osf)
-		# explorer.add_buttonset('link',[self.__button_link_to_osf])
+		self.__button_link_to_osf.setDisabled(True)
 		
 		# Open from OSF buttons
-		self.__button_open_from_osf = QtWidgets.QPushButton(_(u'Open from OSF'))
+		self.__button_open_from_osf = QtWidgets.QPushButton(_(u'Open experiment'))
+		self.__button_open_from_osf.setIcon(QtGui.QIcon.fromTheme('document-open'))
 		self.__button_open_from_osf.clicked.connect(self.__open_osf_experiment)
-		# explorer.add_buttonset('open',[self.__button_open_from_osf])
+		self.__button_open_from_osf.setDisabled(True)
+
+		# Unlink experiment button
+		self.__button_unlink_experiment = QtWidgets.QPushButton(_(u'Unlink'))
+		self.__button_unlink_experiment.clicked.connect(self.__unlink_experiment)
+		self.__button_unlink_experiment.setDisabled(True)
+
+		# Unlink data button
+		self.__button_unlink_data = QtWidgets.QPushButton(_(u'Unlink'))
+		self.__button_unlink_data.clicked.connect(self.__unlink_data)
+		self.__button_unlink_data.setDisabled(True)
+
+		# Separator line
+		line = QtWidgets.QFrame();
+		line.setFrameShape(line.VLine);
+		line.setFrameShadow(line.Sunken);
+
+		# Add everything to the OSF explorer's buttonbar
+		explorer.buttonbar.layout().insertWidget(2, line)
+		explorer.buttonbar.layout().insertWidget(2, self.__button_open_from_osf)
+		explorer.buttonbar.layout().insertWidget(2, self.__button_link_to_osf)
+		
+		# Add buttons to default explorer buttonset
+		explorer.buttonsets['default'].append(self.__button_open_from_osf)
+		explorer.buttonsets['default'].append(self.__button_link_to_osf)
 
 	def __add_info_linked_widget(self, explorer):
 		# Create widget
@@ -157,39 +172,53 @@ class OpenScienceFramework(base_extension):
 		info_layout.setContentsMargins(15,11,15,40)
 
 		# Set up labels
-		currently_linked_label = QtWidgets.QLabel(_(u"Experiment linked to:"))
-		current_data_label = QtWidgets.QLabel(_(u"Data stored to:"))
-		self.currently_linked_value = QtWidgets.QLabel(_(u"Not linked"))
-		self.currently_linked_value.setStyleSheet("font-style: italic")
-		self.current_data_value = QtWidgets.QLabel(_(u"Not linked"))
-		self.current_data_value.setStyleSheet("font-style: italic")
+		linked_experiment_label = QtWidgets.QLabel(_(u"Experiment linked to:"))
+		linked_data_label = QtWidgets.QLabel(_(u"Data stored to:"))
 
-		autosave_exp_widget = QtWidgets.QWidget()
+		# set up link information
+		self.linked_experiment_value = QtWidgets.QLabel(_(u"Not linked"))
+		self.linked_experiment_value.setStyleSheet("font-style: italic")
+		self.linked_data_value = QtWidgets.QLabel(_(u"Not linked"))
+		self.linked_data_value.setStyleSheet("font-style: italic")
+
+		# Widgets for automatically uploading experiment to OSF on save
+		self.autosave_exp_widget =  QtWidgets.QWidget()
 		autosave_exp_layout = QtWidgets.QHBoxLayout()
-		autosave_exp_widget.setLayout(autosave_exp_layout)
+		autosave_exp_layout.setContentsMargins(0,0,0,0)
+		self.autosave_exp_widget.setLayout(autosave_exp_layout)
 		autosave_exp_label = QtWidgets.QLabel(_(u"Always upload experiment on save"))
 		self.autosave_exp_checkbox = QtWidgets.QCheckBox()
 		autosave_exp_layout.addWidget(self.autosave_exp_checkbox)
-		autosave_exp_layout.addWidget(autosave_exp_label)
+		autosave_exp_layout.addWidget(autosave_exp_label, QtCore.Qt.AlignLeft)
+		self.autosave_exp_widget.setDisabled(True)
 
-		autosave_data_widget = QtWidgets.QWidget()
+		# Widgets for the automatic uploading of experiment data to OSF
+		self.autosave_data_widget = QtWidgets.QWidget()
 		autosave_data_layout = QtWidgets.QHBoxLayout()
-		autosave_data_widget.setLayout(autosave_data_layout)
+		autosave_data_layout.setContentsMargins(0,0,0,0)
+		self.autosave_data_widget.setLayout(autosave_data_layout)
 		self.autosave_data_checkbox = QtWidgets.QCheckBox()
 		autosave_data_label = QtWidgets.QLabel(_(u"Always upload data on save"))
 		autosave_data_layout.addWidget(self.autosave_data_checkbox)
-		autosave_data_layout.addWidget(autosave_data_label)
+		autosave_data_layout.addWidget(autosave_data_label, QtCore.Qt.AlignLeft)
+		self.autosave_data_widget.setDisabled(True)
 
 		# Add labels to layout
-		info_layout.addWidget(currently_linked_label, 1, 1)
-		info_layout.addWidget(self.currently_linked_value, 1, 2)
-		info_layout.addWidget(self.__button_link_to_osf,1, 3)
-		info_layout.addWidget(autosave_exp_widget, 1, 4)
-		info_layout.addWidget(current_data_label, 2, 1)
-		info_layout.addWidget(self.current_data_value, 2, 2)
-		info_layout.addWidget(self.__button_open_from_osf, 2, 3)
-		info_layout.addWidget(autosave_data_widget, 2, 4)
+		# First row
+		info_layout.addWidget(linked_experiment_label, 1, 1, QtCore.Qt.AlignRight)
+		info_layout.addWidget(self.linked_experiment_value, 1, 2)
+		info_layout.addWidget(self.__button_unlink_experiment, 1, 3)
+		info_layout.addWidget(self.autosave_exp_widget, 1, 4)
+		# Second row
+		info_layout.addWidget(linked_data_label, 2, 1, QtCore.Qt.AlignRight)
+		info_layout.addWidget(self.linked_data_value, 2, 2)
+		info_layout.addWidget(self.__button_unlink_data, 2, 3)
+		info_layout.addWidget(self.autosave_data_widget, 2, 4)
 		info_widget.setLayout(info_layout)
+
+		# Make sure the column containing the linked location info takes up the
+		# most space
+		info_layout.setColumnStretch(2,1)
 
 		# Make sure the info_widget is vertically as small as possible.
 		info_widget.setSizePolicy(QtWidgets.QSizePolicy.Minimum, 
@@ -312,9 +341,9 @@ class OpenScienceFramework(base_extension):
 		# opensesame.open(saved_exp_location)
 
 		# # Embed OSF data in the experiment (if it's not already there)
-		# if not opensesame.experiment.var.has('osf_id'):
+		# if not self.experiment.var.has('osf_id'):
 		# 	# Embed osf id in the experiment
-		# 	opensesame.experiment.var.osf_id = kwargs['osf_data']['id']
+		# 	self.experiment.var.osf_id = kwargs['osf_data']['id']
 		
 
 	def __link_experiment_to_osf(self):
@@ -344,37 +373,19 @@ class OpenScienceFramework(base_extension):
 		# #If opened, check if the experiment is already linked to OSF
 		# if experiment.var.has('osf_id'):
 		# 	# Check
+		# 	
+	def __unlink_experiment(self):
+		pass
+
+	def __unlink_data(self):
+		pass
 
 	## display modes
-	def __set_full_mode(self):
-		config = {'buttonset':'default','filter': None}
-		self.project_explorer.config = config
-		self.__show_explorer_tab()
-		self.current_mode = u"full"
-
-	def __set_open_experiment_mode(self, *args, **kwargs):
-		# Set explorer config for current mode
-		config = {
-			'buttonset':'open',
-			'filter': self.OpenSesame_filetypes
-		}
-		self.project_explorer.config = config
-		self.__show_explorer_tab()
-		self.current_mode = u"open"
-		# See if button for this mode should be enabled for current selection
-		self.__set_button_availabilty(self.project_tree.currentItem())
-		
-	def __set_save_expirment_mode(self, *args, **kwargs):
-		# Set explorer config for current mode
-		config = {
-			'buttonset':'link',
-			'filter': self.OpenSesame_filetypes
-		}
-		self.project_explorer.config = config
-		self.__show_explorer_tab()
-		self.current_mode = u"save"
-		# See if button for this mode should be enabled for current selection
-		self.__set_button_availabilty(self.project_tree.currentItem())
+	# def __set_full_mode(self):
+	# 	config = {'buttonset':'default','filter': None}
+	# 	self.project_explorer.config = config
+	# 	self.__show_explorer_tab()
+	# 	self.current_mode = u"full"
 		
 	
 	
