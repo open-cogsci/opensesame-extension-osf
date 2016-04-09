@@ -37,6 +37,37 @@ __license__ = u"Apache2"
 from openscienceframework import widgets, events, manager
 import os
 
+class Dispatcher(QtCore.QObject):
+	def __init__(self, notifier):
+		super(Dispatcher,self).__init__()
+		self.notifier = notifier
+
+	@QtCore.pyqtSlot('QString', 'QString')
+	def error(self, title, message):
+		""" Show an error message in a 'critical' QMessageBox.
+
+		Parameters
+		----------
+		title : str
+			The title of the box
+		message : str
+			The message to display
+		"""
+		self.notifier.show_notification(message, 'danger')
+
+	@QtCore.pyqtSlot('QString', 'QString')
+	def info(self, title, message):
+		""" Show a  message in a 'information' QMessageBox.
+
+		Parameters
+		----------
+		title : str
+			The title of the box
+		message : str
+			The message to display
+		"""
+		self.notifier.show_notification(message, 'info')
+
 class OpenScienceFramework(base_extension):
 
 	OpenSesame_filetypes = ['*.osexp','*.opensesame','*.opensesame.tar.gz']
@@ -72,8 +103,19 @@ class OpenScienceFramework(base_extension):
 		
 	def __initialize(self):
 		tokenfile = os.path.abspath("token.json")
+		
+		# Check if notifier extension is available, but set default to None
+		# in this case, simple QDialog boxes will be used by the osf extension
+		self.notifier = None
+		for extension in self.extensions:
+			if type(extension).__name__ == 'notifications':
+				# Create a new dispatcher object that passes information on to
+				# the notifier extension
+				self.dispatcher = Dispatcher(extension)
+				break
+
 		# Create manager object
-		self.manager = manager.ConnectionManager(tokenfile)
+		self.manager = manager.ConnectionManager(tokenfile, self.dispatcher)
 
 		# Init and set up user badge
 		icon_size = self.toolbar.iconSize()
@@ -169,7 +211,7 @@ class OpenScienceFramework(base_extension):
 
 		# Set up layout
 		info_layout = QtWidgets.QGridLayout()
-		info_layout.setContentsMargins(15,11,15,40)
+		#info_layout.setContentsMargins(15, 11, 15, 40)
 
 		# Set up labels
 		linked_experiment_label = QtWidgets.QLabel(_(u"Experiment linked to:"))
@@ -184,7 +226,7 @@ class OpenScienceFramework(base_extension):
 		# Widgets for automatically uploading experiment to OSF on save
 		self.autosave_exp_widget =  QtWidgets.QWidget()
 		autosave_exp_layout = QtWidgets.QHBoxLayout()
-		autosave_exp_layout.setContentsMargins(0,0,0,0)
+		autosave_exp_layout.setContentsMargins(0, 0, 0, 0)
 		self.autosave_exp_widget.setLayout(autosave_exp_layout)
 		autosave_exp_label = QtWidgets.QLabel(_(u"Always upload experiment on save"))
 		self.autosave_exp_checkbox = QtWidgets.QCheckBox()
@@ -195,7 +237,7 @@ class OpenScienceFramework(base_extension):
 		# Widgets for the automatic uploading of experiment data to OSF
 		self.autosave_data_widget = QtWidgets.QWidget()
 		autosave_data_layout = QtWidgets.QHBoxLayout()
-		autosave_data_layout.setContentsMargins(0,0,0,0)
+		autosave_data_layout.setContentsMargins(0, 0, 0, 0)
 		self.autosave_data_widget.setLayout(autosave_data_layout)
 		self.autosave_data_checkbox = QtWidgets.QCheckBox()
 		autosave_data_label = QtWidgets.QLabel(_(u"Always upload data on save"))
@@ -216,15 +258,18 @@ class OpenScienceFramework(base_extension):
 		info_layout.addWidget(self.autosave_data_widget, 2, 4)
 		info_widget.setLayout(info_layout)
 
+		info_widget.setContentsMargins(0, 0, 0, 0)
+		info_widget.layout().setContentsMargins(0, 0, 0, 0)
+
 		# Make sure the column containing the linked location info takes up the
 		# most space
-		info_layout.setColumnStretch(2,1)
+		info_layout.setColumnStretch(2, 1)
 
 		# Make sure the info_widget is vertically as small as possible.
 		info_widget.setSizePolicy(QtWidgets.QSizePolicy.Minimum, 
 			QtWidgets.QSizePolicy.Fixed)
 		
-		explorer.main_layout.insertWidget(0, info_widget)
+		explorer.main_layout.insertWidget(1, info_widget)
 
 
 	def __set_button_availabilty(self, tree_widget_item):
