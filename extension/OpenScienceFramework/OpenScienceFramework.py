@@ -29,6 +29,8 @@ from qtpy import QtWidgets, QtCore, QtGui
 from libopensesame import debug
 from libqtopensesame.extensions import base_extension
 from libqtopensesame.misc.translate import translation_context
+from libopensesame.py3compat import *
+
 _ = translation_context(u'OpenScienceFramework', category=u'extension')
 
 __author__ = u"Daniel Schreij"
@@ -38,13 +40,15 @@ from openscienceframework import widgets, events, manager
 import os
 
 class Dispatcher(QtCore.QObject):
+	""" Sends on messages to the notifier extension """
+
 	def __init__(self, notifier):
 		super(Dispatcher,self).__init__()
 		self.notifier = notifier
 
 	@QtCore.pyqtSlot('QString', 'QString')
 	def error(self, title, message):
-		""" Show an error message in a 'critical' QMessageBox.
+		""" Show an error message in a red notification ribbon
 
 		Parameters
 		----------
@@ -57,7 +61,7 @@ class Dispatcher(QtCore.QObject):
 
 	@QtCore.pyqtSlot('QString', 'QString')
 	def info(self, title, message):
-		""" Show a  message in a 'information' QMessageBox.
+		""" Show an information message in a blue notification ribbon
 
 		Parameters
 		----------
@@ -68,9 +72,49 @@ class Dispatcher(QtCore.QObject):
 		"""
 		self.notifier.show_notification(message, 'info')
 
-class OpenScienceFramework(base_extension):
+	@QtCore.pyqtSlot('QString', 'QString')
+	def success(self, title, message):
+		""" Show a success message in a green notification ribbon
 
-	OpenSesame_filetypes = ['*.osexp','*.opensesame','*.opensesame.tar.gz']
+		Parameters
+		----------
+		title : str
+			The title of the box
+		message : str
+			The message to display
+		"""
+		self.notifier.show_notification(message, 'success')
+
+class OpenScienceFramework(base_extension):
+	### public functions
+	def set_linked_experiment(self, osf_node):
+		""" Displays the information of experiment on OSF to which the opened
+		experiment is linked and enables the unlink button.
+
+		Parameters
+		----------
+		osf_node : str
+			uri to location of experiment on OSF
+		"""
+		self.linked_experiment_value.setText(osf_node)
+		self.button_unlink_experiment.setDisabled(False)
+		self.autosave_exp_widget.setDisabled(False)
+
+	def set_linked_experiment_data(self, osf_node):
+		""" Displays the information of the folder on OSF to which the data of
+		this experiment is to be saved.
+
+		Parameters
+		----------
+		data : str
+			uri to data folder on OSF
+		"""
+		# Do some data integrity checks (en pray OSf doesn't change its API/
+		# JSON structure too often)
+		self.linked_data_value.setText(osf_node)
+		self.button_unlink_data.setDisabled(False)
+		self.autosave_data_widget.setDisabled(False)
+
 
 	### OpenSesame events
 	def event_startup(self):
@@ -106,7 +150,7 @@ class OpenScienceFramework(base_extension):
 		
 		# Check if notifier extension is available, but set default to None
 		# in this case, simple QDialog boxes will be used by the osf extension
-		self.notifier = None
+		self.dispatcher = None
 		for extension in self.extensions:
 			if type(extension).__name__ == 'notifications':
 				# Create a new dispatcher object that passes information on to
@@ -157,39 +201,33 @@ class OpenScienceFramework(base_extension):
 
 		# Show the user badge
 		self.toolbar.addWidget(self.user_badge)
-
-		# Add other actions to menu
-		for w in self.action.associatedWidgets():
-			if not isinstance(w, QtWidgets.QMenu):
-				continue
-			w.addAction(self.save_to_osf)
-			w.addAction(self.open_from_osf)
-		# self.action.setDisabled(True)
 		self.current_mode = u"full"
 
 	def __setup_buttons(self, explorer):
+		""" Set up the extra buttons which the extension adds to the standard
+		OSF explorer's """
 		# Link to OpenSesame buttons
 		
-		self.__button_link_to_osf = QtWidgets.QPushButton(_(u'Link this experiment to folder'))
-		self.__button_link_to_osf.setIcon(QtGui.QIcon.fromTheme('insert-link'))
-		self.__button_link_to_osf.clicked.connect(self.__link_experiment_to_osf)
-		self.__button_link_to_osf.setDisabled(True)
+		self.button_link_to_osf = QtWidgets.QPushButton(_(u'Link'))
+		self.button_link_to_osf.setIcon(QtGui.QIcon.fromTheme('insert-link'))
+		self.button_link_to_osf.clicked.connect(self.__link_experiment_to_osf)
+		self.button_link_to_osf.setDisabled(True)
 		
 		# Open from OSF buttons
-		self.__button_open_from_osf = QtWidgets.QPushButton(_(u'Open experiment'))
-		self.__button_open_from_osf.setIcon(QtGui.QIcon.fromTheme('document-open'))
-		self.__button_open_from_osf.clicked.connect(self.__open_osf_experiment)
-		self.__button_open_from_osf.setDisabled(True)
+		self.button_open_from_osf = QtWidgets.QPushButton(_(u'Open'))
+		self.button_open_from_osf.setIcon(QtGui.QIcon.fromTheme('document-open'))
+		self.button_open_from_osf.clicked.connect(self.__open_osf_experiment)
+		self.button_open_from_osf.setDisabled(True)
 
 		# Unlink experiment button
-		self.__button_unlink_experiment = QtWidgets.QPushButton(_(u'Unlink'))
-		self.__button_unlink_experiment.clicked.connect(self.__unlink_experiment)
-		self.__button_unlink_experiment.setDisabled(True)
+		self.button_unlink_experiment = QtWidgets.QPushButton(_(u'Unlink'))
+		self.button_unlink_experiment.clicked.connect(self.__unlink_experiment)
+		self.button_unlink_experiment.setDisabled(True)
 
 		# Unlink data button
-		self.__button_unlink_data = QtWidgets.QPushButton(_(u'Unlink'))
-		self.__button_unlink_data.clicked.connect(self.__unlink_data)
-		self.__button_unlink_data.setDisabled(True)
+		self.button_unlink_data = QtWidgets.QPushButton(_(u'Unlink'))
+		self.button_unlink_data.clicked.connect(self.__unlink_data)
+		self.button_unlink_data.setDisabled(True)
 
 		# Separator line
 		line = QtWidgets.QFrame();
@@ -198,12 +236,12 @@ class OpenScienceFramework(base_extension):
 
 		# Add everything to the OSF explorer's buttonbar
 		explorer.buttonbar.layout().insertWidget(2, line)
-		explorer.buttonbar.layout().insertWidget(2, self.__button_open_from_osf)
-		explorer.buttonbar.layout().insertWidget(2, self.__button_link_to_osf)
+		explorer.buttonbar.layout().insertWidget(2, self.button_open_from_osf)
+		explorer.buttonbar.layout().insertWidget(2, self.button_link_to_osf)
 		
 		# Add buttons to default explorer buttonset
-		explorer.buttonsets['default'].append(self.__button_open_from_osf)
-		explorer.buttonsets['default'].append(self.__button_link_to_osf)
+		explorer.buttonsets['default'].append(self.button_open_from_osf)
+		explorer.buttonsets['default'].append(self.button_link_to_osf)
 
 	def __add_info_linked_widget(self, explorer):
 		# Create widget
@@ -249,12 +287,12 @@ class OpenScienceFramework(base_extension):
 		# First row
 		info_layout.addWidget(linked_experiment_label, 1, 1, QtCore.Qt.AlignRight)
 		info_layout.addWidget(self.linked_experiment_value, 1, 2)
-		info_layout.addWidget(self.__button_unlink_experiment, 1, 3)
+		info_layout.addWidget(self.button_unlink_experiment, 1, 3)
 		info_layout.addWidget(self.autosave_exp_widget, 1, 4)
 		# Second row
 		info_layout.addWidget(linked_data_label, 2, 1, QtCore.Qt.AlignRight)
 		info_layout.addWidget(self.linked_data_value, 2, 2)
-		info_layout.addWidget(self.__button_unlink_data, 2, 3)
+		info_layout.addWidget(self.button_unlink_data, 2, 3)
 		info_layout.addWidget(self.autosave_data_widget, 2, 4)
 		info_widget.setLayout(info_layout)
 
@@ -274,11 +312,10 @@ class OpenScienceFramework(base_extension):
 
 	def __set_button_availabilty(self, tree_widget_item):
 		""" Set button availability depending on current mode """
-
 		# If selection changed to no item, disable all buttons
 		if tree_widget_item is None:
-			self.__button_link_to_osf.setDisabled(True)
-			self.__button_open_from_osf.setDisabled(True)
+			self.button_link_to_osf.setDisabled(True)
+			self.button_open_from_osf.setDisabled(True)
 			return
 
 		data = tree_widget_item.data(0, QtCore.Qt.UserRole)
@@ -289,21 +326,19 @@ class OpenScienceFramework(base_extension):
 			name = data["attributes"]["name"]
 			kind = data["attributes"]["kind"]
 
-		# If mode is 'save', the save button should only be present when a folder
+		# The save button should only be present when a folder
 		# or an OpenSesame file is selected.
-		if self.current_mode == "save":
-			if kind == "folder" or widgets.check_if_opensesame_file(name):
-				self.__button_link_to_osf.setDisabled(False)
-			else:
-				self.__button_link_to_osf.setDisabled(True)
+		if kind == "folder":
+			self.button_link_to_osf.setDisabled(False)
+		else:
+			self.button_link_to_osf.setDisabled(True)
 
-		# If mode is 'open', the open button should only be present when 
+		# The open button should only be present when 
 		# an OpenSesame file is selected.
-		elif self.current_mode == "open":
-			if widgets.check_if_opensesame_file(name):
-				self.__button_open_from_osf.setDisabled(False)
-			else:
-				self.__button_open_from_osf.setDisabled(True)
+		if widgets.check_if_opensesame_file(name, os3_only=True):
+			self.button_open_from_osf.setDisabled(False)
+		else:
+			self.button_open_from_osf.setDisabled(True)
 
 	### PyQt slots
 
@@ -317,14 +352,12 @@ class OpenScienceFramework(base_extension):
 		is selected. """
 
 		# Tree item takes care of its own button settings in this mode
-		if self.current_mode == "full":
-			return
-
 		self.__set_button_availabilty(item)
 
 	# Actions on experiments
 
 	def __open_osf_experiment(self):
+		""" Downloads and then opens an OpenSesame experiment from the OSF """
 		selected_item = self.project_tree.currentItem()
 		# If no item is selected, this result will be None
 		if not selected_item:
@@ -335,7 +368,7 @@ class OpenScienceFramework(base_extension):
 		filename = data['attributes']['name']
 
 		# If the selected item is not an OpenSesame file, stop.
-		if not widgets.check_if_opensesame_file(filename):
+		if not widgets.check_if_opensesame_file(filename, os3_only=True):
 			return
 
 		# See if a previous folder was set, and if not, try to set
@@ -345,8 +378,9 @@ class OpenScienceFramework(base_extension):
 
 		# Show dialog in which user chooses where to save the experiment locally
 		# If the experiment already exists, check if it is the same linked experiment.
-		destination = QtWidgets.QFileDialog.getSaveFileName(self,
-			_("Save file as"),
+	
+		destination = QtWidgets.QFileDialog.getSaveFileName(self.project_explorer,
+			_("Choose location on your computer to store experiment"),
 			os.path.join(self.project_explorer.last_dl_destination_folder, filename),
 		)
 
@@ -357,39 +391,61 @@ class OpenScienceFramework(base_extension):
 
 		if destination:
 			# Remember this folder for later when this dialog has to be presented again
-			self.last_dl_destination_folder = os.path.split(destination)[0]
-			# Configure progress dialog
-			download_progress_dialog = QtWidgets.QProgressDialog()
-			download_progress_dialog.hide()
-			download_progress_dialog.setLabelText(_("Downloading") + " " + filename)
-			download_progress_dialog.setMinimum(0)
-			download_progress_dialog.setMaximum(data['attributes']['size'])
+			self.last_dl_destination_folder = os.path.dirname(destination)
+			# Some file providers do not report the size. Check for that here
+			if data['attributes']['size']:
+				# Configure progress dialog
+				download_progress_dialog = QtWidgets.QProgressDialog()
+				download_progress_dialog.hide()
+				download_progress_dialog.setLabelText(_("Downloading") + " " + filename)
+				download_progress_dialog.setMinimum(0)
+				download_progress_dialog.setMaximum(data['attributes']['size'])
+				progress_cb = self.project_explorer._transfer_progress
+			else:
+				download_progress_dialog = None
+				progress_cb = None
+			
 			# Download the file
-			self.manager.download_file(
-				download_url,
-				destination,
-				downloadProgress=self.project_explorer.__transfer_progress,
-				progressDialog=download_progress_dialog,
-				finishedCallback=self.__experiment_downloaded,
-				osf_data=data
-			)
+			try:
+				self.manager.download_file(
+					download_url,
+					destination,
+					downloadProgress=progress_cb,
+					progressDialog=download_progress_dialog,
+					finishedCallback=self.__experiment_downloaded,
+					osf_data=data
+				)
+			except Exception as e:
+				print(e)
 
 	def __experiment_downloaded(self, reply, progressDialog, *args, **kwargs):
 		""" Callback for __open_osf_experiment() """
 
-		self.manager.info_message.emit(_(u'Experiment downloaded'),_(u'Your '
-		'experiment downloaded successfully'))
-		progressDialog.deleteLater()
+		saved_exp_location = kwargs.get('destination')
+	
+		if isinstance(progressDialog, QtWidgets.QWidget):
+			progressDialog.deleteLater()
 
 		# Open experiment in OpenSesame
-		saved_exp_location = kwargs.get('destination')
-		# opensesame.open(saved_exp_location)
+		self.main_window.open_file(path=saved_exp_location, add_to_recent=True)
 
-		# # Embed OSF data in the experiment (if it's not already there)
-		# if not self.experiment.var.has('osf_id'):
-		# 	# Embed osf id in the experiment
-		# 	self.experiment.var.osf_id = kwargs['osf_data']['id']
-		
+		# Show notification
+		self.manager.success_message.emit(_(u'Experiment opened'),_(u'Your '
+		'experiment was successfully downloaded to {}'.format(saved_exp_location)))
+
+		# Embed OSF node id in the experiment (if it's not already there)
+		if not self.experiment.var.has('osf_id'):
+			# Embed osf id in the experiment
+			self.experiment.var.osf_id = kwargs['osf_data']['id']
+			# And save it
+			self.main_window.save_file()
+		self.set_linked_experiment(kwargs['osf_data']['links']['self'])
+
+		# Check if a node to upload data to has been linked for this experiment
+		# If so, display this information in the OSF explorer.
+		if self.experiment.var.has('osf_datanode_id'):
+			self.set_linked_experiment_data(self.experiment.var.osf_datanode_id)
+
 
 	def __link_experiment_to_osf(self):
 		selected_item = self.project_tree.currentItem()
@@ -420,10 +476,36 @@ class OpenScienceFramework(base_extension):
 		# 	# Check
 		# 	
 	def __unlink_experiment(self):
-		pass
+		""" Unlinks the experiment from the OSF """
+		reply = QtWidgets.QMessageBox.question(
+			None,
+			_("Please confirm"),
+			_("Are you sure you want to unlink this experiment from OSF?'"),
+			QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
+		)
+		if reply == QtWidgets.QMessageBox.No:
+			return
+		self.linked_experiment_value.setText(_(u"Not linked"))
+		self.button_unlink_experiment.setDisabled(True)
+		self.autosave_exp_widget.setDisabled(True)
+		self.experiment.var.unset('osf_id')
+		self.main_window.save_file()
 
 	def __unlink_data(self):
-		pass
+		""" Unlinks the experiment from the OSF """
+		reply = QtWidgets.QMessageBox.question(
+			None,
+			_("Please confirm"),
+			_("Are you sure you want to unlink this experiment's data storage from OSF?'"),
+			QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
+		)
+		if reply == QtWidgets.QMessageBox.No:
+			return
+		self.linked_data_value.setText(_(u"Not linked"))
+		self.button_unlink_data.setDisabled(True)
+		self.autosave_data_widget.setDisabled(True)
+		self.experiment.var.unset('osf_datanode_id')
+		self.main_window.save_file()
 
 	## display modes
 	# def __set_full_mode(self):
