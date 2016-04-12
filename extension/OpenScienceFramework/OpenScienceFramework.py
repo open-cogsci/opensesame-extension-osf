@@ -31,6 +31,9 @@ from libqtopensesame.extensions import base_extension
 from libqtopensesame.misc.translate import translation_context
 from libopensesame.py3compat import *
 
+import json
+import warnings
+
 _ = translation_context(u'OpenScienceFramework', category=u'extension')
 
 __author__ = u"Daniel Schreij"
@@ -93,14 +96,21 @@ class OpenScienceFramework(base_extension):
 
 		Parameters
 		----------
-		osf_node : str
-			uri to location of experiment on OSF
+		osf_node : str or None
+			uri to location of experiment on OSF. 
+			None resets the displays and unlinks experiment
 		"""
-		self.linked_experiment_value.setText(osf_node)
-		self.button_unlink_experiment.setDisabled(False)
-		self.autosave_exp_widget.setDisabled(False)
+		if osf_node is None:
+			self.linked_experiment_value.setText(_(u"Not linked"))
+			self.button_unlink_experiment.setDisabled(True)
+			self.widget_autosave_experiment.setDisabled(True)
+			self.checkbox_autosave_experiment.setCheckState(QtCore.Qt.Unchecked)
+		else:
+			self.linked_experiment_value.setText(osf_node)
+			self.button_unlink_experiment.setDisabled(False)
+			self.widget_autosave_experiment.setDisabled(False)
 
-	def set_linked_experiment_data(self, osf_node):
+	def set_linked_experiment_datanode(self, osf_node):
 		""" Displays the information of the folder on OSF to which the data of
 		this experiment is to be saved.
 
@@ -108,12 +118,17 @@ class OpenScienceFramework(base_extension):
 		----------
 		data : str
 			uri to data folder on OSF
+			None resets the displays and unlinks datanode
 		"""
-		# Do some data integrity checks (en pray OSf doesn't change its API/
-		# JSON structure too often)
-		self.linked_data_value.setText(osf_node)
-		self.button_unlink_data.setDisabled(False)
-		self.autosave_data_widget.setDisabled(False)
+		if osf_node is None:
+			self.linked_data_value.setText(_(u"Not linked"))
+			self.button_unlink_data.setDisabled(True)
+			self.widget_autosave_data.setDisabled(True)
+			self.checkbox_autosave_data.setCheckState(QtCore.Qt.Checked)
+		else:
+			self.linked_data_value.setText(osf_node)
+			self.button_unlink_data.setDisabled(False)
+			self.widget_autosave_data.setDisabled(False)
 
 
 	### OpenSesame events
@@ -127,6 +142,26 @@ class OpenScienceFramework(base_extension):
 	def event_save_experiment(self, path):
 		""" See if experiment needs to be synced to OSF """
 		debug.msg(u'OSF: Event caught: save_experiment(path=%s)' % path)
+
+	def event_open_experiment(self, path):
+		""" Check if opened experiment is linked to the OSF and set parameters
+		accordingly """
+		# Check if exp is linked to OSF. 
+		# If so, display this information in the OSF explorer.
+		if self.experiment.var.has('osf_id'):
+			self.manager.get_file_info(self.experiment.osf_id,
+				self.__process_file_info)
+
+		# Check if a node to upload data to has been linked for this experiment
+		# If so, display this information in the OSF explorer.
+		if self.experiment.var.has('osf_datanode_id'):
+			self.manager.get_file_info(self.experiment.osf_datanode_id,
+				self.__process_datafolder_info)
+
+	def event_close(self):
+		""" Reset the OSF parameters to unlinked """
+		self.set_linked_experiment(None)
+		self.set_linked_experiment_datanode(None)
 
 	def event_end_experiment(self, ret_val):
 		""" See if datafiles need to be saved to OSF """
@@ -262,38 +297,42 @@ class OpenScienceFramework(base_extension):
 		self.linked_data_value.setStyleSheet("font-style: italic")
 
 		# Widgets for automatically uploading experiment to OSF on save
-		self.autosave_exp_widget =  QtWidgets.QWidget()
+		self.widget_autosave_experiment =  QtWidgets.QWidget()
 		autosave_exp_layout = QtWidgets.QHBoxLayout()
 		autosave_exp_layout.setContentsMargins(0, 0, 0, 0)
-		self.autosave_exp_widget.setLayout(autosave_exp_layout)
+		self.widget_autosave_experiment.setLayout(autosave_exp_layout)
 		autosave_exp_label = QtWidgets.QLabel(_(u"Always upload experiment on save"))
-		self.autosave_exp_checkbox = QtWidgets.QCheckBox()
-		autosave_exp_layout.addWidget(self.autosave_exp_checkbox)
+		self.checkbox_autosave_experiment = QtWidgets.QCheckBox()
+		self.checkbox_autosave_experiment.stateChanged.connect(
+			self.__handle_autosave_experiment)
+		autosave_exp_layout.addWidget(self.checkbox_autosave_experiment)
 		autosave_exp_layout.addWidget(autosave_exp_label, QtCore.Qt.AlignLeft)
-		self.autosave_exp_widget.setDisabled(True)
+		self.widget_autosave_experiment.setDisabled(True)
 
 		# Widgets for the automatic uploading of experiment data to OSF
-		self.autosave_data_widget = QtWidgets.QWidget()
+		self.widget_autosave_data = QtWidgets.QWidget()
 		autosave_data_layout = QtWidgets.QHBoxLayout()
 		autosave_data_layout.setContentsMargins(0, 0, 0, 0)
-		self.autosave_data_widget.setLayout(autosave_data_layout)
-		self.autosave_data_checkbox = QtWidgets.QCheckBox()
+		self.widget_autosave_data.setLayout(autosave_data_layout)
+		self.checkbox_autosave_data = QtWidgets.QCheckBox()
+		self.checkbox_autosave_data.stateChanged.connect(
+			self.__handle_autosave_data)
 		autosave_data_label = QtWidgets.QLabel(_(u"Always upload data on save"))
-		autosave_data_layout.addWidget(self.autosave_data_checkbox)
+		autosave_data_layout.addWidget(self.checkbox_autosave_data)
 		autosave_data_layout.addWidget(autosave_data_label, QtCore.Qt.AlignLeft)
-		self.autosave_data_widget.setDisabled(True)
+		self.widget_autosave_data.setDisabled(True)
 
 		# Add labels to layout
 		# First row
 		info_layout.addWidget(linked_experiment_label, 1, 1, QtCore.Qt.AlignRight)
 		info_layout.addWidget(self.linked_experiment_value, 1, 2)
 		info_layout.addWidget(self.button_unlink_experiment, 1, 3)
-		info_layout.addWidget(self.autosave_exp_widget, 1, 4)
+		info_layout.addWidget(self.widget_autosave_experiment, 1, 4)
 		# Second row
 		info_layout.addWidget(linked_data_label, 2, 1, QtCore.Qt.AlignRight)
 		info_layout.addWidget(self.linked_data_value, 2, 2)
 		info_layout.addWidget(self.button_unlink_data, 2, 3)
-		info_layout.addWidget(self.autosave_data_widget, 2, 4)
+		info_layout.addWidget(self.widget_autosave_data, 2, 4)
 		info_widget.setLayout(info_layout)
 
 		info_widget.setContentsMargins(0, 0, 0, 0)
@@ -309,9 +348,43 @@ class OpenScienceFramework(base_extension):
 		
 		explorer.main_layout.insertWidget(1, info_widget)
 
+	def __process_file_info(self, reply):
+		""" Callback for event_open_experiment """
+		# Parse the response
+		data = json.loads(safe_decode(reply.readAll().data()))
+		# Check if structure is valid, and if so, parse experiment's osf path
+		# from the data.
+		try:
+			osf_file_path = data['data']['links']['self']
+		except KeyError as e:
+			warnings.warn('Invalid OSF response format: {}'.format(e))
+		else:
+			self.set_linked_experiment(osf_file_path)
+			# See if always upload experiment flag has been set in the experiment
+			if not self.experiment.var.has('osf_always_upload_experiment'):
+				return
+			if self.experiment.var.osf_always_upload_experiment == u"yes":
+				self.checkbox_autosave_experiment.setCheckState(QtCore.Qt.Checked)
+
+	def __process_datafolder_info(self, reply):
+		""" Callback for event_open_experiment """
+		data = json.loads(safe_decode(reply.readAll().data()))
+		try:
+			osf_folder_path = data['data']['links']['self']
+		except KeyError as e:
+			warnings.warn('Invalid OSF response format: {}'.format(e))
+		else:
+			self.set_linked_experiment_datanode(osf_folder_path)
+			# See if always upload data flag has been set in the experiment
+			if not self.experiment.var.has('osf_always_upload_data'):
+				return
+			if self.experiment.var.osf_always_upload_data == u"yes":
+				self.checkbox_autosave_data.setCheckState(QtCore.Qt.Checked)
 
 	def __set_button_availabilty(self, tree_widget_item):
-		""" Set button availability depending on current mode """
+		""" Checks if buttons should be disabled or not, depending on the currently 
+		selected tree item. For example, the Open button is only activated if an 
+		OpenSesame experiment is selected."""
 		# If selection changed to no item, disable all buttons
 		if tree_widget_item is None:
 			self.button_link_to_osf.setDisabled(True)
@@ -346,13 +419,22 @@ class OpenScienceFramework(base_extension):
 		self.tabwidget.add(self.project_explorer, self.osf_icon, _(u'OSF Explorer'))
 
 	def __currentTreeItemChanged(self, item, col):
-		""" Handles the QTreeWidget currentItemChanged event. Checks if buttons.
-		should be disabled or not, depending on the currently selected tree item.
-		For example, the Open button is only activated if an OpenSesame experiment
-		is selected. """
-
-		# Tree item takes care of its own button settings in this mode
+		""" Handles the QTreeWidget currentItemChanged event. """
 		self.__set_button_availabilty(item)
+
+	def __handle_autosave_experiment(self, state):
+		""" slot for checkbox_autosave_experiment"""
+		if state == QtCore.Qt.Checked:
+			self.experiment.var.osf_always_upload_experiment = u"yes"
+		else:
+			self.experiment.var.osf_always_upload_experiment = u"no"
+
+	def __handle_autosave_data(self, state):
+		""" slot for checkbox_autosave_data"""		
+		if state == QtCore.Qt.Checked:
+			self.experiment.var.osf_always_upload_data = u"yes"
+		else:
+			self.experiment.var.osf_always_upload_data = u"no"
 
 	# Actions on experiments
 
@@ -439,13 +521,7 @@ class OpenScienceFramework(base_extension):
 			self.experiment.var.osf_id = kwargs['osf_data']['id']
 			# And save it
 			self.main_window.save_file()
-		self.set_linked_experiment(kwargs['osf_data']['links']['self'])
-
-		# Check if a node to upload data to has been linked for this experiment
-		# If so, display this information in the OSF explorer.
-		if self.experiment.var.has('osf_datanode_id'):
-			self.set_linked_experiment_data(self.experiment.var.osf_datanode_id)
-
+			self.set_linked_experiment(kwargs['osf_data']['links']['self'])
 
 	def __link_experiment_to_osf(self):
 		selected_item = self.project_tree.currentItem()
@@ -485,11 +561,9 @@ class OpenScienceFramework(base_extension):
 		)
 		if reply == QtWidgets.QMessageBox.No:
 			return
-		self.linked_experiment_value.setText(_(u"Not linked"))
-		self.button_unlink_experiment.setDisabled(True)
-		self.autosave_exp_widget.setDisabled(True)
+		self.set_linked_experiment(None)
 		self.experiment.var.unset('osf_id')
-		self.main_window.save_file()
+		self.experiment.var.unset('osf_always_upload_experiment')
 
 	def __unlink_data(self):
 		""" Unlinks the experiment from the OSF """
@@ -501,11 +575,9 @@ class OpenScienceFramework(base_extension):
 		)
 		if reply == QtWidgets.QMessageBox.No:
 			return
-		self.linked_data_value.setText(_(u"Not linked"))
-		self.button_unlink_data.setDisabled(True)
-		self.autosave_data_widget.setDisabled(True)
+		self.set_linked_experiment_datanode(None)
 		self.experiment.var.unset('osf_datanode_id')
-		self.main_window.save_file()
+		self.experiment.var.unset('osf_always_upload_data')
 
 	## display modes
 	# def __set_full_mode(self):
