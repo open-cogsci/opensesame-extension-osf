@@ -172,7 +172,6 @@ class OpenScienceFramework(base_extension):
 			self.button_unlink_data.setDisabled(False)
 			self.widget_autosave_data.setDisabled(False)
 
-
 	### OpenSesame events
 	def event_startup(self):
 		self.__initialize()
@@ -209,9 +208,29 @@ class OpenScienceFramework(base_extension):
 	
 	def event_save_experiment(self, path):
 		""" See if experiment needs to be synced to OSF and do so if necessary"""
-		if self.experiment.var.has('osf_id'):
-			osf_id = self.experiment.var.osf_id
+		# First check if OSF id has been set
+		if not self.experiment.var.has('osf_id'):
+			return
+		
+		osf_id = self.experiment.var.osf_id
 
+		# If the autosave checkbox is not checked, ask the user for permission
+		# to upload the experiment to OSF
+		if not self.experiment.var.has('osf_always_upload_experiment') or \
+			self.experiment.var.osf_always_upload_experiment != 'yes':
+			reply = QtWidgets.QMessageBox.question(
+				None,
+				_(u"Upload experiment to OSF"),
+				_(u"Would you also like to update the version of this experiment"
+					" on the Open Science Framework?"),
+				QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
+			)
+			if reply == QtWidgets.QMessageBox.No:
+				return
+
+		# First we need to retrieve the experiment details to determine the upload
+		# link. The real file uploading will thus be done in the callback function
+		self.manager.get_file_info(osf_id, self.__prepare_experiment_sync)
 
 	def event_open_experiment(self, path):
 		""" Check if opened experiment is linked to the OSF and set parameters
@@ -221,12 +240,18 @@ class OpenScienceFramework(base_extension):
 		if self.experiment.var.has('osf_id'):
 			self.manager.get_file_info(self.experiment.osf_id,
 				self.__process_file_info)
+		else:
+			# Reset GUI if no osf_id is present
+			self.set_linked_experiment(None)
 
 		# Check if a node to upload data to has been linked for this experiment
 		# If so, display this information in the OSF explorer.
 		if self.experiment.var.has('osf_datanode_id'):
 			self.manager.get_file_info(self.experiment.osf_datanode_id,
 				self.__process_datafolder_info)
+		else:
+			# Reset GUI if this data is not present
+			self.set_linked_experiment_datanode(None)
 
 	def event_close(self):
 		""" Reset the OSF parameters to unlinked """
@@ -384,7 +409,7 @@ class OpenScienceFramework(base_extension):
 		autosave_exp_label = QtWidgets.QLabel(_(u"Always upload experiment on save"))
 		self.checkbox_autosave_experiment = QtWidgets.QCheckBox()
 		self.checkbox_autosave_experiment.stateChanged.connect(
-			self.__handle_autosave_experiment)
+			self.__handle_check_autosave_experiment)
 		autosave_exp_layout.addWidget(self.checkbox_autosave_experiment)
 		autosave_exp_layout.addWidget(autosave_exp_label, QtCore.Qt.AlignLeft)
 		self.widget_autosave_experiment.setDisabled(True)
@@ -396,8 +421,8 @@ class OpenScienceFramework(base_extension):
 		self.widget_autosave_data.setLayout(autosave_data_layout)
 		self.checkbox_autosave_data = QtWidgets.QCheckBox()
 		self.checkbox_autosave_data.stateChanged.connect(
-			self.__handle_autosave_data)
-		autosave_data_label = QtWidgets.QLabel(_(u"Always upload data on save"))
+			self.__handle_check_autosave_data)
+		autosave_data_label = QtWidgets.QLabel(_(u"Always upload collected data"))
 		autosave_data_layout.addWidget(self.checkbox_autosave_data)
 		autosave_data_layout.addWidget(autosave_data_label, QtCore.Qt.AlignLeft)
 		self.widget_autosave_data.setDisabled(True)
@@ -438,13 +463,14 @@ class OpenScienceFramework(base_extension):
 			osf_file_path = data['data']['links']['self']
 		except KeyError as e:
 			warnings.warn('Invalid OSF response format: {}'.format(e))
-		else:
-			self.set_linked_experiment(osf_file_path)
-			# See if always upload experiment flag has been set in the experiment
-			if not self.experiment.var.has('osf_always_upload_experiment'):
-				return
-			if self.experiment.var.osf_always_upload_experiment == u"yes":
-				self.checkbox_autosave_experiment.setCheckState(QtCore.Qt.Checked)
+			return
+		
+		self.set_linked_experiment(osf_file_path)
+		# See if always upload experiment flag has been set in the experiment
+		if not self.experiment.var.has('osf_always_upload_experiment'):
+			return
+		if self.experiment.var.osf_always_upload_experiment == u"yes":
+			self.checkbox_autosave_experiment.setCheckState(QtCore.Qt.Checked)
 
 	def __process_datafolder_info(self, reply):
 		""" Callback for event_open_experiment """
@@ -496,27 +522,73 @@ class OpenScienceFramework(base_extension):
 	### PyQt slots
 
 	def __show_explorer_tab(self):
+		""" Shows the OSF tab in the main content section """
 		self.tabwidget.add(self.project_explorer, self.osf_icon, _(u'OSF Explorer'))
 
 	def __currentTreeItemChanged(self, item, col):
 		""" Handles the QTreeWidget currentItemChanged event. """
 		self.__set_button_availabilty(item)
 
-	def __handle_autosave_experiment(self, state):
+	def __handle_check_autosave_experiment(self, state):
 		""" slot for checkbox_autosave_experiment"""
 		if state == QtCore.Qt.Checked:
 			self.experiment.var.osf_always_upload_experiment = u"yes"
 		else:
 			self.experiment.var.osf_always_upload_experiment = u"no"
 
-	def __handle_autosave_data(self, state):
+	def __handle_check_autosave_data(self, state):
 		""" slot for checkbox_autosave_data"""		
 		if state == QtCore.Qt.Checked:
 			self.experiment.var.osf_always_upload_data = u"yes"
 		else:
 			self.experiment.var.osf_always_upload_data = u"no"
 
-	# Actions on experiments
+	### Actions for experiments
+
+	def __prepare_experiment_sync(self, reply):
+		""" Callback for event_save_experiment.
+
+		Retrieves the correct upload(/update) link for an experiment on the OSF.
+		And uploads the currently open/linked experiment to that link. """
+		# Parse the response
+		data = json.loads(safe_decode(reply.readAll().data()))
+		# Check if structure is valid, and if so, parse experiment's osf path
+		# from the data.
+		try:
+			upload_url = data['data']['links']['upload']
+		except KeyError as e:
+			warnings.warn('Invalid OSF response format: {}'.format(e))
+			return
+
+		# Convert to QFile (to get size info later)
+		file_to_upload = QtCore.QFile(self.main_window.current_path)
+		# Add this parameters so OSF knows what we want
+		upload_url += '?kind=file'
+
+		# Create a progress dialog to show upload status for large experiments
+		# that take a while to transfer
+		progress_dialog = QtWidgets.QProgressDialog()
+		progress_dialog.hide()
+		progress_dialog.setLabelText(_(u"Please wait. Syncing") + u" " \
+			+ file_to_upload.fileName())
+		progress_dialog.setMinimum(0)
+		progress_dialog.setMaximum(file_to_upload.size())
+
+		self.manager.upload_file(
+			upload_url,
+			file_to_upload,
+			uploadProgress=self.project_explorer._transfer_progress,
+			progressDialog=progress_dialog,
+			finishedCallback=self.project_explorer._upload_finished,
+			afterUploadCallback=self.__notify_sync_complete
+		)
+
+	def __notify_sync_complete(self, *args, **kwargs):
+		""" Callback for __prepare_experiment_sync.
+		Simply notifies if the syncing operation completed successfully. """
+
+		self.notifier.success(_(u'Sync success'),_(u'Experimented successfully'
+			' synced to the Open Science Framework'))
 
 	def __open_osf_experiment(self):
 		""" Downloads and then opens an OpenSesame experiment from the OSF """
@@ -604,93 +676,92 @@ class OpenScienceFramework(base_extension):
 			self.set_linked_experiment(kwargs['osf_data']['links']['self'])
 
 	def __link_experiment_to_osf(self):
+		""" Links an experiment to a folder on the OSF and uploads it to that
+		location """
+		# Check if an experiment is opened
+		if not self.main_window.current_path:
+			self.notifier.warning(_(u'File not saved'), 
+				_(u'Please save experiment before linking it to the Open '
+					'Science Framework'))
+			return
+
+		#If opened, check if the experiment is already linked to OSF
+		if self.experiment.var.has('osf_id'):
+			reply = QtWidgets.QMessageBox.question(
+				None,
+				_("Please confirm"),
+				_("This experiment already seems to be linked to a location "
+					"on the OSF. Are you sure you want to change this link?"),
+				QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
+			)
+			if reply == QtWidgets.QMessageBox.No:
+				return
+
+		# Get the data for the selected item and check if it is valid
 		try:
-			# Check if an experiment is opened
-			if not self.main_window.current_path:
-				self.notifier.warning(_(u'File not saved'), 
-					_(u'Please save experiment before linking it to the Open '
-						'Science Framework'))
+			selected_item = self.__get_selected_node_for_link()
+			data = selected_item.data(0, QtCore.Qt.UserRole)
+		except ValueError as e:
+			warnings.warn(e)
+			return
+
+		# Get URL to upload to
+		upload_url = data['links']['upload']
+		experiment_filename = os.path.split(self.main_window.current_path)[1]
+
+		# Convert to QFile (to get size info later)
+		file_to_upload = QtCore.QFile(self.main_window.current_path)
+
+		# See if file is already present in this folder
+		index_if_present = self.project_explorer.tree.find_item(
+			selected_item, 0, experiment_filename)
+
+		# If index_is_present is None, the file is probably new
+		if index_if_present is None:
+			# add required query parameters
+			upload_url += '?kind=file&name={}'.format(experiment_filename)
+		# If index_is_present is a number, it means the file is present
+		# and that file needs to be updated.
+		else:
+			# If the file is already found, ask the user if it should be 
+			# overwritten
+			reply = QtWidgets.QMessageBox.question(
+				None,
+				_(u"Please confirm"),
+				_(u"An experiment with the same filename was already found in"
+					" this folder. Are you sure you want to overwrite it?"),
+				QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
+			)
+			if reply == QtWidgets.QMessageBox.No:
 				return
+			
+			old_item = selected_item.child(index_if_present)
+			# Get data stored in item
+			old_item_data = old_item.data(0,QtCore.Qt.UserRole)
+			# Get file specific update utrl
+			upload_url = old_item_data['links']['upload']
+			upload_url += '?kind=file'
 
-			#If opened, check if the experiment is already linked to OSF
-			if self.experiment.var.has('osf_id'):
-				reply = QtWidgets.QMessageBox.question(
-					None,
-					_("Please confirm"),
-					_("This experiment already seems to be linked to a location "
-						"on the OSF. Are you sure you want to change this link?"),
-					QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
-				)
-				if reply == QtWidgets.QMessageBox.No:
-					return
+		# Create a progress dialog to show upload status for large experiments
+		# that take a while to transfer
+		progress_dialog = QtWidgets.QProgressDialog()
+		progress_dialog.hide()
+		progress_dialog.setLabelText(_(u"Please wait. Syncing") + u" " \
+			+ file_to_upload.fileName())
+		progress_dialog.setMinimum(0)
+		progress_dialog.setMaximum(file_to_upload.size())
 
-			# Get the data for the selected item and check if it is valid
-			try:
-				selected_item = self.__get_selected_node_for_link()
-				data = selected_item.data(0, QtCore.Qt.UserRole)
-			except ValueError as e:
-				warnings.warn(e)
-				return
-
-			# Get URL to upload to
-			upload_url = data['links']['upload']
-			experiment_filename = os.path.split(self.main_window.current_path)[1]
-
-			# Convert to QFile (to get size info later)
-			file_to_upload = QtCore.QFile(self.main_window.current_path)
-
-			# See if file is already present in this folder
-			index_if_present = self.project_explorer.tree.find_item(
-				selected_item, 0, experiment_filename)
-
-			# If index_is_present is None, the file is probably new
-			if index_if_present is None:
-				# add required query parameters
-				upload_url += '?kind=file&name={}'.format(experiment_filename)
-			# If index_is_present is a number, it means the file is present
-			# and that file needs to be updated.
-			else:
-				# If the file is already found, ask the user if it should be 
-				# overwritten
-				reply = QtWidgets.QMessageBox.question(
-					None,
-					_(u"Please confirm"),
-					_(u"An experiment with the same filename was already found in"
-						" this folder. Are you sure you want to overwrite it?"),
-					QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
-				)
-				if reply == QtWidgets.QMessageBox.No:
-					return
-				
-				old_item = selected_item.child(index_if_present)
-				# Get data stored in item
-				old_item_data = old_item.data(0,QtCore.Qt.UserRole)
-				# Get file specific update utrl
-				upload_url = old_item_data['links']['upload']
-				upload_url += '?kind=file'
-
-			# Create a progress dialog to show upload status for large experiments
-			# that take a while to transfer
-			progress_dialog = QtWidgets.QProgressDialog()
-			progress_dialog.hide()
-			progress_dialog.setLabelText(_(u"Please wait. Syncing") + u" " \
-				+ file_to_upload.fileName())
-			progress_dialog.setMinimum(0)
-			progress_dialog.setMaximum(file_to_upload.size())
-
-			self.manager.upload_file(
-				upload_url,
-				file_to_upload,
-				uploadProgress=self.project_explorer._transfer_progress,
-				progressDialog=progress_dialog,
-				finishedCallback=self.project_explorer._upload_finished,
-				afterUploadCallback=self.__link_experiment_succeeded,
-				selectedTreeItem=selected_item,
-				updateIndex=index_if_present
-			)		
-		except Exception as e:
-			print(e)
-
+		self.manager.upload_file(
+			upload_url,
+			file_to_upload,
+			uploadProgress=self.project_explorer._transfer_progress,
+			progressDialog=progress_dialog,
+			finishedCallback=self.project_explorer._upload_finished,
+			afterUploadCallback=self.__link_experiment_succeeded,
+			selectedTreeItem=selected_item,
+			updateIndex=index_if_present
+		)		
+		
 	def __link_experiment_succeeded(self, *args, **kwargs):
 		""" Callback for __link_experiment_to_osf if it succeeded """
 		# Get the data returned by the OSF for the newly created item. This data
@@ -732,6 +803,8 @@ class OpenScienceFramework(base_extension):
 		self.experiment.var.unset('osf_id')
 		self.experiment.var.unset('osf_always_upload_experiment')
 
+	### Actions for experiment data
+
 	def __link_data_to_osf(self):
 		try:
 			selected_item = self.__get_selected_node_for_link()
@@ -741,7 +814,6 @@ class OpenScienceFramework(base_extension):
 			return
 
 		osf_id = data['id']
-
 
 	def __unlink_data(self):
 		""" Unlinks the experiment from the OSF """
@@ -757,6 +829,8 @@ class OpenScienceFramework(base_extension):
 		self.experiment.var.unset('osf_datanode_id')
 		self.experiment.var.unset('osf_always_upload_data')
 		
+	### Other common utility functions
+
 	def __get_selected_node_for_link(self):
 		""" Checks if current selection is valid for linking operation, which
 		can only be done to folders (DRY). Returns the selected tree item containing
