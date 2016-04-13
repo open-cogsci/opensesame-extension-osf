@@ -40,13 +40,18 @@ __author__ = u"Daniel Schreij"
 __license__ = u"Apache2"
 
 from openscienceframework import widgets, events, manager
+from openscienceframework import connection as osf
 import os
 
-class Dispatcher(QtCore.QObject):
-	""" Sends on messages to the notifier extension """
+class Notifier(QtCore.QObject):
+	""" Sends on messages to the notifier extension or shows a dialog box if
+	it is not available """
 
 	def __init__(self, notifier):
-		super(Dispatcher,self).__init__()
+		super(Notifier,self).__init__()
+		if not notifier is None and not hasattr(notifier, 'show_notification'):
+			raise AttributeError(u"passed instance is missing required "
+				"'show_notification(message, type)' function")
 		self.notifier = notifier
 
 	@QtCore.pyqtSlot('QString', 'QString')
@@ -60,7 +65,32 @@ class Dispatcher(QtCore.QObject):
 		message : str
 			The message to display
 		"""
-		self.notifier.show_notification(message, 'danger')
+		if self.notifier:
+			self.notifier.show_notification(message, 'danger')
+		else:
+			QtWidgets.QMessageBox.critical(None,
+				title,
+				message
+			)
+
+	@QtCore.pyqtSlot('QString', 'QString')
+	def warning(self, title, message):
+		""" Show a warning message in an orange notification ribbon
+
+		Parameters
+		----------
+		title : str
+			The title of the box
+		message : str
+			The message to display
+		"""
+		if self.notifier:
+			self.notifier.show_notification(message, 'warning')
+		else:
+			QtWidgets.QMessageBox.critical(None,
+				title,
+				message
+			)
 
 	@QtCore.pyqtSlot('QString', 'QString')
 	def info(self, title, message):
@@ -73,7 +103,13 @@ class Dispatcher(QtCore.QObject):
 		message : str
 			The message to display
 		"""
-		self.notifier.show_notification(message, 'info')
+		if self.notifier:
+			self.notifier.show_notification(message, 'info')
+		else:
+			QtWidgets.QMessageBox.information(None,
+				title,
+				message
+			)
 
 	@QtCore.pyqtSlot('QString', 'QString')
 	def success(self, title, message):
@@ -86,7 +122,13 @@ class Dispatcher(QtCore.QObject):
 		message : str
 			The message to display
 		"""
-		self.notifier.show_notification(message, 'success')
+		if self.notifier:
+			self.notifier.show_notification(message, 'success')
+		else:
+			QtWidgets.QMessageBox.information(None,
+				title,
+				message
+			)
 
 class OpenScienceFramework(base_extension):
 	### public functions
@@ -124,7 +166,7 @@ class OpenScienceFramework(base_extension):
 			self.linked_data_value.setText(_(u"Not linked"))
 			self.button_unlink_data.setDisabled(True)
 			self.widget_autosave_data.setDisabled(True)
-			self.checkbox_autosave_data.setCheckState(QtCore.Qt.Checked)
+			self.checkbox_autosave_data.setCheckState(QtCore.Qt.Unchecked)
 		else:
 			self.linked_data_value.setText(osf_node)
 			self.button_unlink_data.setDisabled(False)
@@ -136,12 +178,40 @@ class OpenScienceFramework(base_extension):
 		self.__initialize()
 	
 	def activate(self):
-		""" Show OSF Explorer with  default buttons enabled """
-		self.__show_explorer_tab()
+		""" Show OSF Explorer with default buttons enabled. Also check if osf_id
+		is still set and if it is valid. Users have access to it through the 
+		variable registry object, so it is possible they tampered with it. """
+		if self.experiment.var.has('osf_id') and self.experiment.var.osf_id:
+			# Check if the supplied osf_id is a valid one:
+			osf_url = osf.api_call('file_info', self.experiment.var.osf_id)
+
+			# Update linked data
+			self.set_linked_experiment(osf_url)
+			# Check if 'always upload experiment' should (still) be checked
+			if self.experiment.var.has('osf_always_upload_experiment') and \
+				self.experiment.var.osf_always_upload_experiment == 'yes':
+				self.checkbox_autosave_experiment.setCheckState(QtCore.Qt.Checked)
+			else:
+				self.checkbox_autosave_experiment.setCheckState(QtCore.Qt.Unchecked)
+
+			# If osf_id is nonexistent, the manager.get function will display an
+			# error on its own, so just simply pass a lambda function for the
+			# callback (we don't need to do anything with that data.)
+			self.manager.get(
+				osf_url, 
+				lambda x: None
+			)
+		else:
+			# If the osf_id variable is gone, they link to OSF is severed. This
+			# should be updated in the GUI
+			self.set_linked_experiment(None)
+		self.__show_explorer_tab()	
 	
 	def event_save_experiment(self, path):
-		""" See if experiment needs to be synced to OSF """
-		debug.msg(u'OSF: Event caught: save_experiment(path=%s)' % path)
+		""" See if experiment needs to be synced to OSF and do so if necessary"""
+		if self.experiment.var.has('osf_id'):
+			osf_id = self.experiment.var.osf_id
+
 
 	def event_open_experiment(self, path):
 		""" Check if opened experiment is linked to the OSF and set parameters
@@ -184,17 +254,18 @@ class OpenScienceFramework(base_extension):
 		tokenfile = os.path.abspath("token.json")
 		
 		# Check if notifier extension is available, but set default to None
-		# in this case, simple QDialog boxes will be used by the osf extension
-		self.dispatcher = None
+		# in this case, simple QDialog boxes will be used.
 		for extension in self.extensions:
 			if type(extension).__name__ == 'notifications':
-				# Create a new dispatcher object that passes information on to
+				# Create a new Notifier object that passes information on to
 				# the notifier extension
-				self.dispatcher = Dispatcher(extension)
+				self.notifier = Notifier(extension)
 				break
+		else:
+			self.notifier = Notifier(None)
 
 		# Create manager object
-		self.manager = manager.ConnectionManager(tokenfile, self.dispatcher)
+		self.manager = manager.ConnectionManager(tokenfile, self.notifier)
 
 		# Init and set up user badge
 		icon_size = self.toolbar.iconSize()
@@ -223,7 +294,7 @@ class OpenScienceFramework(base_extension):
 		# a logged_in event and removes this file after logout
 		self.tfl = events.TokenFileListener(tokenfile)
 
-		# Add items as listeners to the event dispatcher
+		# Add items as listeners to the event Notifier
 		self.manager.dispatcher.add_listeners(
 			[
 				self, self.tfl, self.project_tree,
@@ -242,11 +313,18 @@ class OpenScienceFramework(base_extension):
 		""" Set up the extra buttons which the extension adds to the standard
 		OSF explorer's """
 		# Link to OpenSesame buttons
-		
-		self.button_link_to_osf = QtWidgets.QPushButton(_(u'Link'))
-		self.button_link_to_osf.setIcon(QtGui.QIcon.fromTheme('insert-link'))
-		self.button_link_to_osf.clicked.connect(self.__link_experiment_to_osf)
-		self.button_link_to_osf.setDisabled(True)
+
+		# Link experiment to folder
+		self.button_link_exp_to_osf = QtWidgets.QPushButton(_(u'Link experiment'))
+		self.button_link_exp_to_osf.setIcon(QtGui.QIcon.fromTheme('insert-link'))
+		self.button_link_exp_to_osf.clicked.connect(self.__link_experiment_to_osf)
+		self.button_link_exp_to_osf.setDisabled(True)
+
+		# Link data folder
+		self.button_link_data_to_osf = QtWidgets.QPushButton(_(u'Link data folder'))
+		self.button_link_data_to_osf.setIcon(QtGui.QIcon.fromTheme('insert-link'))
+		self.button_link_data_to_osf.clicked.connect(self.__link_data_to_osf)
+		self.button_link_data_to_osf.setDisabled(True)
 		
 		# Open from OSF buttons
 		self.button_open_from_osf = QtWidgets.QPushButton(_(u'Open'))
@@ -272,11 +350,13 @@ class OpenScienceFramework(base_extension):
 		# Add everything to the OSF explorer's buttonbar
 		explorer.buttonbar.layout().insertWidget(2, line)
 		explorer.buttonbar.layout().insertWidget(2, self.button_open_from_osf)
-		explorer.buttonbar.layout().insertWidget(2, self.button_link_to_osf)
+		explorer.buttonbar.layout().insertWidget(2, self.button_link_exp_to_osf)
+		explorer.buttonbar.layout().insertWidget(2, self.button_link_data_to_osf)
 		
 		# Add buttons to default explorer buttonset
 		explorer.buttonsets['default'].append(self.button_open_from_osf)
-		explorer.buttonsets['default'].append(self.button_link_to_osf)
+		explorer.buttonsets['default'].append(self.button_link_exp_to_osf)
+		explorer.buttonsets['default'].append(self.button_link_data_to_osf)
 
 	def __add_info_linked_widget(self, explorer):
 		# Create widget
@@ -387,7 +467,7 @@ class OpenScienceFramework(base_extension):
 		OpenSesame experiment is selected."""
 		# If selection changed to no item, disable all buttons
 		if tree_widget_item is None:
-			self.button_link_to_osf.setDisabled(True)
+			self.button_link_exp_to_osf.setDisabled(True)
 			self.button_open_from_osf.setDisabled(True)
 			return
 
@@ -402,9 +482,9 @@ class OpenScienceFramework(base_extension):
 		# The save button should only be present when a folder
 		# or an OpenSesame file is selected.
 		if kind == "folder":
-			self.button_link_to_osf.setDisabled(False)
+			self.button_link_exp_to_osf.setDisabled(False)
 		else:
-			self.button_link_to_osf.setDisabled(True)
+			self.button_link_exp_to_osf.setDisabled(True)
 
 		# The open button should only be present when 
 		# an OpenSesame file is selected.
@@ -524,39 +604,126 @@ class OpenScienceFramework(base_extension):
 			self.set_linked_experiment(kwargs['osf_data']['links']['self'])
 
 	def __link_experiment_to_osf(self):
-		selected_item = self.project_tree.currentItem()
-		# If no item is selected, this result will be None
-		if not selected_item:
+		try:
+			# Check if an experiment is opened
+			if not self.main_window.current_path:
+				self.notifier.warning(_(u'File not saved'), 
+					_(u'Please save experiment before linking it to the Open '
+						'Science Framework'))
+				return
+
+			#If opened, check if the experiment is already linked to OSF
+			if self.experiment.var.has('osf_id'):
+				reply = QtWidgets.QMessageBox.question(
+					None,
+					_("Please confirm"),
+					_("This experiment already seems to be linked to a location "
+						"on the OSF. Are you sure you want to change this link?"),
+					QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
+				)
+				if reply == QtWidgets.QMessageBox.No:
+					return
+
+			# Get the data for the selected item and check if it is valid
+			try:
+				selected_item = self.__get_selected_node_for_link()
+				data = selected_item.data(0, QtCore.Qt.UserRole)
+			except ValueError as e:
+				warnings.warn(e)
+				return
+
+			# Get URL to upload to
+			upload_url = data['links']['upload']
+			experiment_filename = os.path.split(self.main_window.current_path)[1]
+
+			# Convert to QFile (to get size info later)
+			file_to_upload = QtCore.QFile(self.main_window.current_path)
+
+			# See if file is already present in this folder
+			index_if_present = self.project_explorer.tree.find_item(
+				selected_item, 0, experiment_filename)
+
+			# If index_is_present is None, the file is probably new
+			if index_if_present is None:
+				# add required query parameters
+				upload_url += '?kind=file&name={}'.format(experiment_filename)
+			# If index_is_present is a number, it means the file is present
+			# and that file needs to be updated.
+			else:
+				# If the file is already found, ask the user if it should be 
+				# overwritten
+				reply = QtWidgets.QMessageBox.question(
+					None,
+					_(u"Please confirm"),
+					_(u"An experiment with the same filename was already found in"
+						" this folder. Are you sure you want to overwrite it?"),
+					QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
+				)
+				if reply == QtWidgets.QMessageBox.No:
+					return
+				
+				old_item = selected_item.child(index_if_present)
+				# Get data stored in item
+				old_item_data = old_item.data(0,QtCore.Qt.UserRole)
+				# Get file specific update utrl
+				upload_url = old_item_data['links']['upload']
+				upload_url += '?kind=file'
+
+			# Create a progress dialog to show upload status for large experiments
+			# that take a while to transfer
+			progress_dialog = QtWidgets.QProgressDialog()
+			progress_dialog.hide()
+			progress_dialog.setLabelText(_(u"Please wait. Syncing") + u" " \
+				+ file_to_upload.fileName())
+			progress_dialog.setMinimum(0)
+			progress_dialog.setMaximum(file_to_upload.size())
+
+			self.manager.upload_file(
+				upload_url,
+				file_to_upload,
+				uploadProgress=self.project_explorer._transfer_progress,
+				progressDialog=progress_dialog,
+				finishedCallback=self.project_explorer._upload_finished,
+				afterUploadCallback=self.__link_experiment_succeeded,
+				selectedTreeItem=selected_item,
+				updateIndex=index_if_present
+			)		
+		except Exception as e:
+			print(e)
+
+	def __link_experiment_succeeded(self, *args, **kwargs):
+		""" Callback for __link_experiment_to_osf if it succeeded """
+		# Get the data returned by the OSF for the newly created item. This data
+		# is severely lacking compared to what it normall returns for info requests
+		new_item = kwargs.get('new_item')
+		if new_item is None:
+			self.notifier.error('Error',_(u'Could not retrieve added item info from OSF'))
 			return
-		# Get the selected item's name
-		data = selected_item.data(0, QtCore.Qt.UserRole)
-		osf_id = data['id']
 
-		# Data is 'node' if a top-level project is selected.
-		if data['type'] != 'files':
+		try:
+			# The data returne by OSF is really messy, but since we don't have access
+			# to the refreshed data yet, we'll have to make due with it.
+			# Parse OSF id from download url (it is the final component) 
+			self.experiment.var.osf_id = \
+				os.path.basename(new_item['data']['links']['download'])
+		except KeyError as e:
+			self.notifier.error('Error',
+				_(u'Received data structure not as expected: {}'.format(e)))
 			return
+		# Generate the api url ourselves with the id we just determined
+		osf_path = osf.api_call('file_info', self.experiment.var.osf_id)
+		# Set the linked information
+		self.set_linked_experiment(osf_path)
+		# Notify the user about the success
+		self.notifier.success(_(u"Experiment successfully linked"),
+			_(u"The experiment has been linked to the OSF at ") + osf_path)
 
-		filename = data['attributes']['name']
-		kind = data['attributes']['kind']
-
-		# If the selected item is not an OpenSesame file or folder to store
-		# the experiment in, stop.
-		if not kind == 'folder': # and not widgets.check_if_opensesame_file(filename):
-			return
-
-		# #Check if an experiment is opened
-		# SomeOpenSesameCall()
-		
-		# #If opened, check if the experiment is already linked to OSF
-		# if experiment.var.has('osf_id'):
-		# 	# Check
-		# 	
 	def __unlink_experiment(self):
 		""" Unlinks the experiment from the OSF """
 		reply = QtWidgets.QMessageBox.question(
 			None,
 			_("Please confirm"),
-			_("Are you sure you want to unlink this experiment from OSF?'"),
+			_("Are you sure you want to unlink this experiment from OSF?"),
 			QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
 		)
 		if reply == QtWidgets.QMessageBox.No:
@@ -565,12 +732,23 @@ class OpenScienceFramework(base_extension):
 		self.experiment.var.unset('osf_id')
 		self.experiment.var.unset('osf_always_upload_experiment')
 
+	def __link_data_to_osf(self):
+		try:
+			selected_item = self.__get_selected_node_for_link()
+			data = selected_item.data(0, QtCore.Qt.UserRole)
+		except ValueError as e:
+			warnings.warn(e)
+			return
+
+		osf_id = data['id']
+
+
 	def __unlink_data(self):
 		""" Unlinks the experiment from the OSF """
 		reply = QtWidgets.QMessageBox.question(
 			None,
-			_("Please confirm"),
-			_("Are you sure you want to unlink this experiment's data storage from OSF?'"),
+			_(u"Please confirm"),
+			_(u"Are you sure you want to unlink this experiment's data storage from OSF?"),
 			QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
 		)
 		if reply == QtWidgets.QMessageBox.No:
@@ -578,13 +756,28 @@ class OpenScienceFramework(base_extension):
 		self.set_linked_experiment_datanode(None)
 		self.experiment.var.unset('osf_datanode_id')
 		self.experiment.var.unset('osf_always_upload_data')
-
-	## display modes
-	# def __set_full_mode(self):
-	# 	config = {'buttonset':'default','filter': None}
-	# 	self.project_explorer.config = config
-	# 	self.__show_explorer_tab()
-	# 	self.current_mode = u"full"
 		
+	def __get_selected_node_for_link(self):
+		""" Checks if current selection is valid for linking operation, which
+		can only be done to folders (DRY). Returns the selected tree item containing
+		the node information. """
+		selected_item = self.project_tree.currentItem()
+
+		# If no item is selected, this result will be None
+		if not selected_item:
+			raise ValueError('No item was selected')
+		# Get the selected item's name
+		data = selected_item.data(0, QtCore.Qt.UserRole)
+		
+		# Data is 'node' if a top-level project is selected.
+		if data['type'] != 'files':
+			raise ValueError('Top-level repository selected, only folders allowed')
+
+		# If the selected item is not an OpenSesame file or folder to store
+		# the experiment in, stop.
+		if not data['attributes']['kind'] == 'folder':
+			raise ValueError('Only folders can be linkd to')
+
+		return selected_item
 	
 	
