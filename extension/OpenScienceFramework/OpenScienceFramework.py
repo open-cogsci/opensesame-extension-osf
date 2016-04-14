@@ -209,7 +209,7 @@ class OpenScienceFramework(base_extension):
 	def event_save_experiment(self, path):
 		""" See if experiment needs to be synced to OSF and do so if necessary"""
 		# First check if OSF id has been set
-		if not self.experiment.var.has('osf_id'):
+		if not self.experiment.var.has('osf_id') or not self.manager.logged_in_user:
 			return
 		
 		osf_id = self.experiment.var.osf_id
@@ -235,23 +235,34 @@ class OpenScienceFramework(base_extension):
 	def event_open_experiment(self, path):
 		""" Check if opened experiment is linked to the OSF and set parameters
 		accordingly """
-		# Check if exp is linked to OSF. 
-		# If so, display this information in the OSF explorer.
-		if self.experiment.var.has('osf_id'):
-			self.manager.get_file_info(self.experiment.osf_id,
-				self.__process_file_info)
-		else:
-			# Reset GUI if no osf_id is present
-			self.set_linked_experiment(None)
+		# Only take action if user is logged in
+		if self.manager.logged_in_user:
+			# Check if exp is linked to OSF. 
+			# If so, display this information in the OSF explorer.
+			if self.experiment.var.has('osf_id'):
+				self.manager.get_file_info(self.experiment.osf_id,
+					self.__process_file_info)
+			else:
+				# Reset GUI if no osf_id is present
+				self.set_linked_experiment(None)
 
-		# Check if a node to upload data to has been linked for this experiment
-		# If so, display this information in the OSF explorer.
-		if self.experiment.var.has('osf_datanode_id'):
-			self.manager.get_file_info(self.experiment.osf_datanode_id,
-				self.__process_datafolder_info)
-		else:
-			# Reset GUI if this data is not present
-			self.set_linked_experiment_datanode(None)
+			# Check if a node to upload data to has been linked for this experiment
+			# If so, display this information in the OSF explorer.
+			if self.experiment.var.has('osf_datanode_id'):
+				self.manager.get_file_info(self.experiment.osf_datanode_id,
+					self.__process_datafolder_info)
+			else:
+				# Reset GUI if this data is not present
+				self.set_linked_experiment_datanode(None)
+		# If user is not logged in, issue a warning on opening that a linkt to
+		# the OSF has been detected, but no syncing can occur as long is the user
+		# is not logged in.
+		elif self.experiment.var.has('osf_id') or \
+			self.experiment.var.has('osf_datanode_id'):
+			self.notifier.info(_(u'OSF link detected'),
+				_(u'This experiment seems to be linked to the Open Science '
+					'Framework. Please login if you want to use the syncing '
+					'functionalities'))
 
 	def event_close(self):
 		""" Reset the OSF parameters to unlinked """
@@ -322,7 +333,7 @@ class OpenScienceFramework(base_extension):
 		# Add items as listeners to the event Notifier
 		self.manager.dispatcher.add_listeners(
 			[
-				self, self.tfl, self.project_tree,
+				self, self.tfl, self.project_tree, self.manager,
 				self.user_badge, self.project_explorer
 			]
 		)
