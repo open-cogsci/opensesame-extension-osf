@@ -47,12 +47,17 @@ class Notifier(QtCore.QObject):
 	""" Sends on messages to the notifier extension or shows a dialog box if
 	it is not available """
 
-	def __init__(self, notifier):
+	def __init__(self, extension_manager):
+		""" Constructor 
+		
+		Parameters
+		----------
+		extension_manager : OpenSesame exension manager
+			The object that fires internal OpenSesame events.
+		"""
+
 		super(Notifier,self).__init__()
-		if not notifier is None and not hasattr(notifier, 'show_notification'):
-			raise AttributeError(u"passed instance is missing required "
-				"'show_notification(message, type)' function")
-		self.notifier = notifier
+		self.extension_manager = extension_manager
 
 	@QtCore.pyqtSlot('QString', 'QString')
 	def error(self, title, message):
@@ -65,13 +70,7 @@ class Notifier(QtCore.QObject):
 		message : str
 			The message to display
 		"""
-		if self.notifier:
-			self.notifier.show_notification(message, 'danger')
-		else:
-			QtWidgets.QMessageBox.critical(None,
-				title,
-				message
-			)
+		self.extension_manager.fire('notify', message=message, kind='danger')
 
 	@QtCore.pyqtSlot('QString', 'QString')
 	def warning(self, title, message):
@@ -84,13 +83,7 @@ class Notifier(QtCore.QObject):
 		message : str
 			The message to display
 		"""
-		if self.notifier:
-			self.notifier.show_notification(message, 'warning')
-		else:
-			QtWidgets.QMessageBox.critical(None,
-				title,
-				message
-			)
+		self.extension_manager.fire('notify', message=message, kind='warning')
 
 	@QtCore.pyqtSlot('QString', 'QString')
 	def info(self, title, message):
@@ -103,13 +96,7 @@ class Notifier(QtCore.QObject):
 		message : str
 			The message to display
 		"""
-		if self.notifier:
-			self.notifier.show_notification(message, 'info')
-		else:
-			QtWidgets.QMessageBox.information(None,
-				title,
-				message
-			)
+		self.extension_manager.fire('notify', message=message, kind='info')
 
 	@QtCore.pyqtSlot('QString', 'QString')
 	def success(self, title, message):
@@ -122,13 +109,22 @@ class Notifier(QtCore.QObject):
 		message : str
 			The message to display
 		"""
-		if self.notifier:
-			self.notifier.show_notification(message, 'success')
-		else:
-			QtWidgets.QMessageBox.information(None,
-				title,
-				message
-			)
+		self.extension_manager.fire('notify', message=message, kind='success')
+
+
+	@QtCore.pyqtSlot('QString', 'QString')
+	def primary(self, title, message):
+		""" Show a success message in a 'primary' class notification ribbon
+
+		Parameters
+		----------
+		title : str
+			The title of the box
+		message : str
+			The message to display
+		"""
+		self.extension_manager.fire('notify', message=message, kind='primary')
+
 
 class OpenScienceFramework(base_extension):
 	### public functions
@@ -289,16 +285,8 @@ class OpenScienceFramework(base_extension):
 	def __initialize(self):
 		tokenfile = os.path.abspath("token.json")
 		
-		# Check if notifier extension is available, but set default to None
-		# in this case, simple QDialog boxes will be used.
-		for extension in self.extensions:
-			if type(extension).__name__ == 'notifications':
-				# Create a new Notifier object that passes information on to
-				# the notifier extension
-				self.notifier = Notifier(extension)
-				break
-		else:
-			self.notifier = Notifier(None)
+		# Initialize notifier
+		self.notifier = Notifier(self.extension_manager)
 
 		# Create manager object
 		self.manager = manager.ConnectionManager(tokenfile, self.notifier)
@@ -598,7 +586,7 @@ class OpenScienceFramework(base_extension):
 		""" Callback for __prepare_experiment_sync.
 		Simply notifies if the syncing operation completed successfully. """
 
-		self.notifier.success(_(u'Sync success'),_(u'Experimented successfully'
+		self.notifier.success(_(u'Sync success'),_(u'Experiment successfully'
 			' synced to the Open Science Framework'))
 
 	def __open_osf_experiment(self):
