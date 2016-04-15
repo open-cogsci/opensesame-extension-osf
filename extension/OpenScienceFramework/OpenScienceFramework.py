@@ -334,6 +334,7 @@ class OpenScienceFramework(base_extension):
 	def event_process_data_files(self, data_files):
 		""" See if datafiles need to be saved to OSF """
 		# Check if data link has been set, and if a user is logged in.
+		
 		if not self.experiment.var.has('osf_datanode_id') or \
 			not self.experiment.var.osf_datanode_id or \
 			not self.manager.logged_in_user:
@@ -357,19 +358,13 @@ class OpenScienceFramework(base_extension):
 		osf_url = self.get_osf_node_url(osf_datanode_id)
 
 		self.manager.get(osf_url, self.__prepare_experiment_data_sync,
-			data_files=datafiles)
-
-
+			data_files=data_files, folder_upload_url=osf_url)
 
 	### Other internal events
 	def handle_login(self):
-		# self.save_to_osf.setDisabled(False)
-		# self.open_from_osf.setDisabled(False)
 		self.action.setDisabled(False)
 
 	def handle_logout(self):
-		# self.save_to_osf.setDisabled(True)
-		# self.open_from_osf.setDisabled(True)
 		self.action.setDisabled(True)
 
 	### Private functions
@@ -641,7 +636,7 @@ class OpenScienceFramework(base_extension):
 
 	### Actions for experiments
 
-	def __prepare_experiment_sync(self, reply):
+	def __prepare_experiment_sync(self, reply, *args, **kwargs):
 		""" Callback for event_save_experiment.
 
 		Retrieves the correct upload(/update) link for an experiment on the OSF.
@@ -676,15 +671,10 @@ class OpenScienceFramework(base_extension):
 			uploadProgress=self.project_explorer._transfer_progress,
 			progressDialog=progress_dialog,
 			finishedCallback=self.project_explorer._upload_finished,
-			afterUploadCallback=self.__notify_sync_complete
+			afterUploadCallback=self.__notify_sync_complete,
+			message=_(u"Experiment"
+				" successfully synced to the Open Science Framework")
 		)
-
-	def __notify_sync_complete(self, *args, **kwargs):
-		""" Callback for __prepare_experiment_sync.
-		Simply notifies if the syncing operation completed successfully. """
-
-		self.notifier.success(_(u'Sync success'),_(u'Experiment successfully'
-			' synced to the Open Science Framework'))
 
 	def __open_osf_experiment(self):
 		""" Downloads and then opens an OpenSesame experiment from the OSF """
@@ -773,8 +763,72 @@ class OpenScienceFramework(base_extension):
 
 	### Actions for experiment data
 
-	def __prepare_experiment_data_sync(self, reply, datafiles):
-		pass
+	def __prepare_experiment_data_sync(self, reply, data_files, 
+		folder_upload_url, *args, **kwargs):
+		""" Callback for event_process_data_files.
+
+		Retrieves the correct upload link for experiment data on the OSF.
+		Checks if the files to upload are not already present in the folder."""
+		# Parse the response
+		data = json.loads(safe_decode(reply.readAll().data()))['data']
+
+		import pprint
+		pp = pprint.PrettyPrinter(indent=4)
+		pp.pprint(data)
+
+		# Generate a list of files already present in this folder
+		present_files = [f['attributes']['name'] for f in data]
+
+		for data_file in data_files:
+			# Check if data file is already present on the server
+			filename = os.path.basename(data_file)
+			if filename in present_files:
+				reply = QtWidgets.QMessageBox.question(
+					None,
+					_(u"Please confirm"),
+					_(u"A data file with the same name is already present at "
+						"the linked location. Do you want to overwrite it?"),
+					QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
+				)
+				if reply == QtWidgets.QMessageBox.No:
+					continue
+
+				file_on_osf = list(filter(
+					lambda x: x['attributes']['name'] == filename, data))
+				# Safety check, should never occur because it's logically
+				# impossible, but hey...
+				if not file_on_osf:
+					warnings.warn(_(u"Something went wrong at checking for duplicate "
+						"file: {}".format(filename)))
+					continue
+				file_upload_url = file_on_osf['links']['upload']
+				upload_url = "{}?kind=file".format(file_upload_url)
+			else:
+				upload_url = "{}?kind=file&name={}".format(
+					folder_upload_url, filename)
+
+			# Convert to QFile (to get size info later)
+			file_to_upload = QtCore.QFile(data_file)
+
+			# Create a progress dialog to show upload status for large experiments
+			# that take a while to transfer
+			progress_dialog = QtWidgets.QProgressDialog()
+			progress_dialog.hide()
+			progress_dialog.setLabelText(_(u"Please wait. Syncing") + u" " \
+				+ file_to_upload.fileName())
+			progress_dialog.setMinimum(0)
+			progress_dialog.setMaximum(file_to_upload.size())
+
+			self.manager.upload_file(
+				upload_url,
+				file_to_upload,
+				uploadProgress=self.project_explorer._transfer_progress,
+				progressDialog=progress_dialog,
+				finishedCallback=self.project_explorer._upload_finished,
+				afterUploadCallback=self.__notify_sync_complete,
+				message=_(u"{} successfully synced to the Open Science "
+					"Framework".format(filename))
+			)
 
 	### (Un)linking of experiments
 
@@ -784,16 +838,16 @@ class OpenScienceFramework(base_extension):
 		# Check if an experiment is opened
 		if not self.main_window.current_path:
 			self.notifier.warning(_(u'File not saved'), 
-				_(u'Please save experiment before linking it to the Open '
-					'Science Framework'))
+				_(u"Please save experiment before linking it to the Open "
+					"Science Framework"))
 			return
 
 		#If opened, check if the experiment is already linked to OSF
 		if self.experiment.var.has('osf_id'):
 			reply = QtWidgets.QMessageBox.question(
 				None,
-				_("Please confirm"),
-				_("This experiment already seems to be linked to a location "
+				_(u"Please confirm"),
+				_(u"This experiment already seems to be linked to a location "
 					"on the OSF. Are you sure you want to change this link?"),
 				QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
 			)
@@ -972,6 +1026,10 @@ class OpenScienceFramework(base_extension):
 		self.experiment.var.unset('osf_always_upload_data')
 		
 	### Other common utility functions
+	def __notify_sync_complete(self, message, source_file):
+		""" Callback for __prepare_experiment_sync and __prepare_experiment_data_sync.
+		Simply notifies if the syncing operation completed successfully. """
+		self.notifier.success(_(u'Sync success'), message)
 
 	def __get_selected_node_for_link(self):
 		""" Checks if current selection is valid for linking operation, which
