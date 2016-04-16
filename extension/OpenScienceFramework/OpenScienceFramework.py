@@ -256,6 +256,7 @@ class OpenScienceFramework(base_extension):
 
 	### OpenSesame events
 	def event_startup(self):
+		""" OpenSesame event on startup of the program. Initialize the extension"""
 		self.__initialize()
 	
 	def activate(self):
@@ -315,6 +316,9 @@ class OpenScienceFramework(base_extension):
 			else:
 				# Reset GUI if this data is not present
 				self.set_linked_experiment_datanode(None)
+			# Refresh contents of the tree so linked items will be marked.
+			if not self.project_tree.isRefreshing:
+				self.project_tree.refresh_contents()
 		# If user is not logged in, issue a warning on opening that a linkt to
 		# the OSF has been detected, but no syncing can occur as long is the user
 		# is not logged in.
@@ -364,14 +368,17 @@ class OpenScienceFramework(base_extension):
 
 	### Other internal events
 	def handle_login(self):
+		""" Event fired upon login to OSF """
 		self.action.setDisabled(False)
 
 	def handle_logout(self):
+		""" Event fired upon logout from the OSF """
 		self.action.setDisabled(True)
 
 	### Private functions
 		
 	def __initialize(self):
+		""" Intialization of the extension """
 		tokenfile = os.path.abspath("token.json")
 		
 		# Initialize notifier
@@ -386,7 +393,15 @@ class OpenScienceFramework(base_extension):
 
 		# Set-up project tree
 		self.project_tree = widgets.ProjectTree(self.manager)
+		# Change button availability depending on currently selected item.
 		self.project_tree.currentItemChanged.connect(self.__set_button_availabilty)
+		# Mark the items in the tree that are linked to this experiment
+		self.project_tree.refreshFinished.connect(self.__mark_linked_nodes)
+		# Add extra column for remarks
+		self.project_tree.setColumnCount(self.project_tree.columnCount()+1)
+		header = self.project_tree.headerItem()
+		header.setText(self.project_tree.columnCount()-1,_(u'Remarks'))
+
 
 		# Save osf_icon for later usage
 		self.osf_icon = self.project_tree.get_icon('folder', 'osfstorage')
@@ -424,6 +439,10 @@ class OpenScienceFramework(base_extension):
 		# Button mode feature no longer used, so the line below could be removed
 		# (but do check if that breaks anything)
 		self.current_mode = u"full"
+
+		# Initialize linked tree widget items
+		self.linked_experiment_treewidgetitem = None
+		self.linked_datanode_treewidgetitem = None
 
 	def __setup_buttons(self, explorer):
 		""" Set up the extra buttons which the extension adds to the standard
@@ -616,6 +635,36 @@ class OpenScienceFramework(base_extension):
 		else:
 			self.button_open_from_osf.setDisabled(True)
 
+	def __mark_treewidget_item(self, item, remark_text):
+		""" Makes all columns of the tree item bold and puts remarkt_text in the
+		remark column. Used to show which treewidget items represent a linked
+		experiment or data folder. """
+		# Make all but the last columns to bold
+		columns = self.project_tree.columnCount()
+		font = item.font(0)
+		font.setBold(True)
+		for i in range(columns-2):
+			item.setFont(i,font)
+		# Last column contains remark_text. Make it italic
+		item.setText(columns-1, remark_text)
+		font = item.font(columns-1)
+		font.setItalic(True)
+		item.setFont(columns-1,font)
+
+	def __unmark_treewidget_item(self, item):
+		""" Removes marking of widget item as linked element """
+		# Make all but the last columns to bold
+		columns = self.project_tree.columnCount()
+		font = item.font(0)
+		font.setBold(False)
+		for i in range(columns-2):
+			item.setFont(i,font)
+		# Last column contains remark_text. Make it italic
+		item.setText(columns-1, '')
+		font = item.font(columns-1)
+		font.setItalic(False)
+		item.setFont(columns-1,font)
+
 	### PyQt slots
 
 	def __show_explorer_tab(self):
@@ -635,6 +684,25 @@ class OpenScienceFramework(base_extension):
 			self.experiment.var.osf_always_upload_data = u"yes"
 		else:
 			self.experiment.var.osf_always_upload_data = u"no"
+
+	def __mark_linked_nodes(self):
+		""" Callback for self.tree.refreshFinished. Marks all files that are
+		connected to the OSF in the tree. """
+		
+		iterator = QtWidgets.QTreeWidgetItemIterator(self.project_tree)
+		while(iterator.value()):
+			item = iterator.value()
+			item_data = item.data(0,QtCore.Qt.UserRole)
+			# Mark linked experiment
+			if self.experiment.var.has('osf_id'):
+				if item_data['id'] == self.experiment.var.osf_id:
+					self.__mark_treewidget_item(item, _(u"Linked experiment"))
+					self.linked_experiment_treewidgetitem = item
+			if self.experiment.var.has('osf_datanode_id'):
+				if item_data['id'] == self.experiment.var.osf_datanode_id:
+					self.__mark_treewidget_item(item, _(u"Linked data folder"))
+					self.linked_datanode_treewidgetitem = item
+			iterator += 1
 
 	### Actions for experiments
 
@@ -952,8 +1020,10 @@ class OpenScienceFramework(base_extension):
 		""" Callback for __link_experiment_to_osf if it succeeded """
 		# Get the data returned by the OSF for the newly created item. This data
 		# is severely lacking compared to what it normally returns for info requests
-		new_item = kwargs.get('new_item')
-		if new_item is None:
+		# The complete new tree_widget_item should also be available as the 
+		# 'new_item' kwarg
+		new_item_data = kwargs.get('new_item_data')
+		if new_item_data is None:
 			self.notifier.error('Error',_(u'Could not retrieve added item info from OSF'))
 			return
 
@@ -962,7 +1032,7 @@ class OpenScienceFramework(base_extension):
 			# to the refreshed data yet, we'll have to make due with it.
 			# Parse OSF id from download url (it is the final component) 
 			self.experiment.var.osf_id = \
-				os.path.basename(new_item['data']['links']['download'])
+				os.path.basename(new_item_data['data']['links']['download'])
 		except KeyError as e:
 			self.notifier.error('Error',
 				_(u'Received data structure not as expected: {}'.format(e)))
@@ -971,6 +1041,15 @@ class OpenScienceFramework(base_extension):
 		osf_path = osf.api_call('file_info', self.experiment.var.osf_id)
 		# Set the linked information
 		self.set_linked_experiment(osf_path)
+
+		new_item = kwargs.get('new_item')
+		# Mark the current item as linked, and unmark the old one if present
+		if isinstance(self.linked_experiment_treewidgetitem, 
+			QtWidgets.QTreeWidgetItem) and new_item:
+			self.__unmark_treewidget_item(self.linked_experiment_treewidgetitem)
+			self.__mark_treewidget_item(new_item, _(u"Linked experiment"))
+			self.linked_experiment_treewidgetitem = new_item
+
 		# Notify the user about the success
 		self.notifier.success(_(u'Experiment successfully linked'),
 			_(u'The experiment has been linked to the OSF at ') + osf_path)
@@ -985,6 +1064,12 @@ class OpenScienceFramework(base_extension):
 		)
 		if reply == QtWidgets.QMessageBox.No:
 			return
+
+		if isinstance(self.linked_experiment_treewidgetitem, 
+			QtWidgets.QTreeWidgetItem):
+			self.__unmark_treewidget_item(self.linked_experiment_treewidgetitem)
+			self.linked_experiment_treewidgetitem = None	
+
 		self.set_linked_experiment(None)
 		self.experiment.var.unset('osf_id')
 		self.experiment.var.unset('osf_always_upload_experiment')
@@ -1039,6 +1124,17 @@ class OpenScienceFramework(base_extension):
 
 		self.experiment.var.osf_datanode_id = data['id']
 		self.set_linked_experiment_datanode(node_url)
+
+		# Mark the current item as linked, and unmark the old one if present
+		if isinstance(self.linked_datanode_treewidgetitem, 
+			QtWidgets.QTreeWidgetItem) and selected_item:
+			self.__unmark_treewidget_item(self.linked_datanode_treewidgetitem)
+			self.__mark_treewidget_item(selected_item, _(u"Linked data folder"))
+			self.linked_datanode_treewidgetitem = selected_item
+
+		# Notify the user about the success
+		self.notifier.success(_(u'Data folder successfully linked'),
+			_(u'The data upload folder has been set to ') + node_url)
 			
 	def __unlink_data(self):
 		""" Unlinks the experiment from the OSF """
@@ -1050,6 +1146,12 @@ class OpenScienceFramework(base_extension):
 		)
 		if reply == QtWidgets.QMessageBox.No:
 			return
+
+		if isinstance(self.linked_datanode_treewidgetitem, 
+			QtWidgets.QTreeWidgetItem):
+			self.__unmark_treewidget_item(self.linked_datanode_treewidgetitem)
+			self.linked_datanode_treewidgetitem = None
+
 		self.set_linked_experiment_datanode(None)
 		self.experiment.var.unset('osf_datanode_id')
 		self.experiment.var.unset('osf_always_upload_data')
