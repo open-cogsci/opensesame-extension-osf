@@ -209,7 +209,6 @@ class OpenScienceFramework(base_extension):
 			self.experiment.var.osf_datanode_id:
 
 			node_id = self.experiment.var.osf_datanode_id
-
 			osf_url = self.get_osf_node_url(node_id)
 
 			# Update linked data
@@ -326,11 +325,6 @@ class OpenScienceFramework(base_extension):
 					'Framework. Please login if you want to use the syncing '
 					'functionalities'))
 
-	def event_close(self):
-		""" Reset the OSF parameters to unlinked """
-		self.set_linked_experiment(None)
-		self.set_linked_experiment_datanode(None)
-
 	def event_process_data_files(self, data_files):
 		""" See if datafiles need to be saved to OSF """
 		# Check if data link has been set, and if a user is logged in.
@@ -347,18 +341,26 @@ class OpenScienceFramework(base_extension):
 			reply = QtWidgets.QMessageBox.question(
 				None,
 				_(u"Upload data to OSF"),
-				_(u"Would you like to update the data files to your linked"
+				_(u"Would you like to upload the data files to your linked"
 					" folder on the Open Science Framework?"),
 				QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
 			)
 			if reply == QtWidgets.QMessageBox.No:
 				return
 
-		osf_datanode_id = self.experiment.var.osf_datanode_id
-		osf_url = self.get_osf_node_url(osf_datanode_id)
+		node_id = self.experiment.var.osf_datanode_id
 
-		self.manager.get(osf_url, self.__prepare_experiment_data_sync,
-			data_files=data_files, folder_upload_url=osf_url)
+		# If there is a colon inside the datanode_id, then we are looking at
+		# a reference to a top-level repository node
+		if ':' in node_id:
+			project_id, repo = node_id.split(':')
+			osf_url = osf.api_call('project_repos', project_id)
+		# If not, it is a normal osf id for a file or folder
+		else:
+			osf_url = osf.api_call('file_info', node_id)
+		# Get the correct upload URL
+		self.manager.get(osf_url, self.__prepare_experiment_data_sync_get_upload_url,
+			data_files=data_files, node_id=node_id)
 
 	### Other internal events
 	def handle_login(self):
@@ -762,19 +764,45 @@ class OpenScienceFramework(base_extension):
 			self.set_linked_experiment(kwargs['osf_data']['links']['self'])
 
 	### Actions for experiment data
+	
+	def __prepare_experiment_data_sync_get_upload_url(self, reply, data_files, node_id):
+		data = json.loads(safe_decode(reply.readAll().data()))['data']
 
-	def __prepare_experiment_data_sync(self, reply, data_files, 
-		folder_upload_url, *args, **kwargs):
+		if isinstance(data, dict):
+			#probabaly a subfolder of a repo
+			try:
+				upload_url = data['links']['upload']
+				files_url = data['relationships']['files']['links']['related']['href']
+			except KeyError as e:
+				warnings.warn("Invalid OSF data structure: {}".format(e))
+				return
+		if isinstance(data, list):
+			# Probably a listing of project repositories
+			# Search for selected repository
+			node = next((item for item in data if item["id"] == node_id), None)
+			# In the unlikely case that repository hasn't been found, quit
+			if node is None:
+				self.notifier.danger('Error','Something went wrong in node selection')
+				return
+
+			try:
+				upload_url = node['links']['upload']
+				files_url = node['relationships']['files']['links']['related']['href']
+			except KeyError as e:
+				warnings.warn("Invalid OSF data structure: {}".format(e))
+				return
+
+		# Check for duplicates
+		self.manager.get(files_url, self.__prepare_experiment_data_sync,
+			data_files=data_files, upload_url=upload_url)
+
+	def __prepare_experiment_data_sync(self, reply, data_files, upload_url):
 		""" Callback for event_process_data_files.
 
 		Retrieves the correct upload link for experiment data on the OSF.
 		Checks if the files to upload are not already present in the folder."""
 		# Parse the response
 		data = json.loads(safe_decode(reply.readAll().data()))['data']
-
-		import pprint
-		pp = pprint.PrettyPrinter(indent=4)
-		pp.pprint(data)
 
 		# Generate a list of files already present in this folder
 		present_files = [f['attributes']['name'] for f in data]
@@ -793,8 +821,9 @@ class OpenScienceFramework(base_extension):
 				if reply == QtWidgets.QMessageBox.No:
 					continue
 
-				file_on_osf = list(filter(
-					lambda x: x['attributes']['name'] == filename, data))
+				file_on_osf = next((item for item in data if \
+					item['attributes']['name'] == filename), None)
+
 				# Safety check, should never occur because it's logically
 				# impossible, but hey...
 				if not file_on_osf:
@@ -805,7 +834,7 @@ class OpenScienceFramework(base_extension):
 				upload_url = "{}?kind=file".format(file_upload_url)
 			else:
 				upload_url = "{}?kind=file&name={}".format(
-					folder_upload_url, filename)
+					upload_url, filename)
 
 			# Convert to QFile (to get size info later)
 			file_to_upload = QtCore.QFile(data_file)
@@ -998,18 +1027,18 @@ class OpenScienceFramework(base_extension):
 		# If selected item is a normal folder it, will have a 'self' entry
 		# use that if available
 		try:
-			upload_url = data['links']['self']
+			node_url = data['links']['self']
 		except KeyError:
 			# If selected item is a data provider node, it can only be referenced
 			# by its 'upload' entry. Display that in this case.
 			try:
-				upload_url = data['links']['upload']
+				node_url = data['links']['upload']
 			except:
 				warnings.warn("Could not determine folder url")
 				return	
 
 		self.experiment.var.osf_datanode_id = data['id']
-		self.set_linked_experiment_datanode(upload_url)
+		self.set_linked_experiment_datanode(node_url)
 			
 	def __unlink_data(self):
 		""" Unlinks the experiment from the OSF """
