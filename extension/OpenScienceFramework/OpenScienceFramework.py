@@ -69,7 +69,7 @@ class Notifier(QtCore.QObject):
 			The message to display
 		"""
 		self.extension_manager.fire('notify', message=message, category='danger',
-			always_show=True)
+			always_show=True, timeout=None)
 
 	@QtCore.pyqtSlot('QString', 'QString')
 	def warning(self, title, message):
@@ -1017,14 +1017,20 @@ class OpenScienceFramework(base_extension):
 		)		
 		
 	def __link_experiment_succeeded(self, *args, **kwargs):
-		""" Callback for __link_experiment_to_osf if it succeeded """
+		""" Callback for __link_experiment_to_osf if it succeeded. This function
+		adds the new item to the tree, without refreshing it completely. For now,
+		it only works with items added to osfstorage as the data return by other
+		providers is very unpredicatble. These simply trigger a full refresh of
+		the tree and don't supply 'new_item_data' to this function. If this is the
+		case, this function simply returns. """
+		
 		# Get the data returned by the OSF for the newly created item. This data
 		# is severely lacking compared to what it normally returns for info requests
 		# The complete new tree_widget_item should also be available as the 
-		# 'new_item' kwarg
+		# 'new_item' kwarg	
+		# for any other provider than osfstorage, new_item_data is useless.
 		new_item_data = kwargs.get('new_item_data')
 		if new_item_data is None:
-			self.notifier.error('Error',_(u'Could not retrieve added item info from OSF'))
 			return
 
 		try:
