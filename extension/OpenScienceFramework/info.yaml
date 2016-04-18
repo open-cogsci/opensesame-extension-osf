@@ -1,10 +1,5 @@
-label: Explore
+label: OSF
 version: 0.1.0
 author: Daniel Schreij
 link : https://github.com/dschreij/opensesame-osf
-icon: folder-remote
-tooltip: Explore your OSF repositories
-toolbar:
-  index: -1
-  separator_after: false
-  separator_before: true
+

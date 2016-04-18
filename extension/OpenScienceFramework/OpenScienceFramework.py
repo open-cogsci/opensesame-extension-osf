@@ -390,6 +390,11 @@ class OpenScienceFramework(base_extension):
 		# Init and set up user badge
 		icon_size = self.toolbar.iconSize()
 		self.user_badge = widgets.UserBadge(self.manager, icon_size)
+		firstAction = self.user_badge.logged_in_menu.actions()[0]
+		show_explorer = QtWidgets.QAction(_(u"Show explorer"), 
+			self.user_badge.logged_in_menu)
+		show_explorer.triggered.connect(self.__show_explorer_tab)
+		self.user_badge.logged_in_menu.insertAction(firstAction, show_explorer)
 
 		# Set-up project tree
 		self.project_tree = widgets.ProjectTree(self.manager)
@@ -401,7 +406,6 @@ class OpenScienceFramework(base_extension):
 		self.project_tree.setColumnCount(self.project_tree.columnCount()+1)
 		header = self.project_tree.headerItem()
 		header.setText(self.project_tree.columnCount()-1,_(u'Remarks'))
-
 
 		# Save osf_icon for later usage
 		self.osf_icon = self.project_tree.get_icon('folder', 'osfstorage')
