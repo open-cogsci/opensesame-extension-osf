@@ -407,6 +407,8 @@ class OpenScienceFramework(base_extension):
 		header = self.project_tree.headerItem()
 		header.setText(self.project_tree.columnCount()-1,_(u'Remarks'))
 
+		# Inject OpenSesame items into the OSF Explorers context menu
+
 		# Save osf_icon for later usage
 		self.osf_icon = self.project_tree.get_icon('folder', 'osfstorage')
 
@@ -422,6 +424,9 @@ class OpenScienceFramework(base_extension):
 		# Add a widget to the project explorer with info about link to OSF states
 		self.__add_info_linked_widget(self.project_explorer)
 
+		# Override the trees contextMenuEvent (again) and handle it here
+		self.project_tree.contextMenuEvent = self.__show_tree_context_menu
+
 		# Token file listener writes the token to a json file if it receives
 		# a logged_in event and removes this file after logout
 		self.tfl = events.TokenFileListener(tokenfile)
@@ -429,8 +434,8 @@ class OpenScienceFramework(base_extension):
 		# Add items as listeners to the event Notifier
 		self.manager.dispatcher.add_listeners(
 			[
-				self, self.tfl, self.project_tree, self.manager,
-				self.user_badge, self.project_explorer
+				self, self.manager, self.tfl, self.user_badge, 
+				self.project_explorer, self.project_tree
 			]
 		)
 		# Connect click on user badge log in/out button to osf log in/out actions
@@ -447,6 +452,36 @@ class OpenScienceFramework(base_extension):
 		# Initialize linked tree widget items
 		self.linked_experiment_treewidgetitem = None
 		self.linked_datanode_treewidgetitem = None
+
+	def __show_tree_context_menu(self, e):
+		item = self.project_tree.itemAt(e.pos())
+		if item is None:
+			return
+
+		context_menu = self.project_explorer.create_context_menu(item)
+		if not context_menu is None:
+			context_menu = self.__inject_context_menu_items(item, context_menu)
+			context_menu.popup(e.globalPos())
+
+	def __inject_context_menu_items(self, item, context_menu):
+		data = item.data(0,QtCore.Qt.UserRole)
+		kind = data["attributes"]["kind"]
+		
+		firstAction = context_menu.actions()[0]
+		if kind == 'folder':
+			sync_experiment = QtWidgets.QAction(QtGui.QIcon.fromTheme('insert-link'),
+				_(u"Sync experiment to this folder"), 
+				context_menu)
+			sync_experiment.triggered.connect(self.__link_experiment_to_osf)
+			context_menu.insertAction(firstAction, sync_experiment)
+
+			sync_data = QtWidgets.QAction(QtGui.QIcon.fromTheme('insert-link'),
+				_(u"Sync data to this folder"), 
+				context_menu)
+			sync_data.triggered.connect(self.__link_data_to_osf)
+			context_menu.insertAction(firstAction, sync_data)
+			context_menu.insertSeparator(firstAction)
+		return context_menu
 
 	def __setup_buttons(self, explorer):
 		""" Set up the extra buttons which the extension adds to the standard
