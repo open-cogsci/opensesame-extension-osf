@@ -469,18 +469,27 @@ class OpenScienceFramework(base_extension):
 		
 		firstAction = context_menu.actions()[0]
 		if kind == 'folder':
+			# Sync experiment entry
 			sync_experiment = QtWidgets.QAction(QtGui.QIcon.fromTheme('insert-link'),
 				_(u"Sync experiment to this folder"), 
 				context_menu)
 			sync_experiment.triggered.connect(self.__link_experiment_to_osf)
 			context_menu.insertAction(firstAction, sync_experiment)
-
+			# Sync data entry
 			sync_data = QtWidgets.QAction(QtGui.QIcon.fromTheme('insert-link'),
 				_(u"Sync data to this folder"), 
 				context_menu)
 			sync_data.triggered.connect(self.__link_data_to_osf)
 			context_menu.insertAction(firstAction, sync_data)
 			context_menu.insertSeparator(firstAction)
+		elif kind == "file":
+			name = data["attributes"]["name"]
+			if widgets.check_if_opensesame_file(name, True):
+				open_experiment = QtWidgets.QAction(QtGui.QIcon.fromTheme('document-open'),
+					_(u"Open experiment"), context_menu)
+				open_experiment.triggered.connect(self.__open_osf_experiment)
+				context_menu.insertAction(firstAction, open_experiment)
+				context_menu.insertSeparator(firstAction)
 		return context_menu
 
 	def __setup_buttons(self, explorer):
@@ -495,7 +504,7 @@ class OpenScienceFramework(base_extension):
 		self.button_link_exp_to_osf.setDisabled(True)
 
 		# Link data folder
-		self.button_link_data_to_osf = QtWidgets.QPushButton(_(u'Link data folder'))
+		self.button_link_data_to_osf = QtWidgets.QPushButton(_(u'Link data'))
 		self.button_link_data_to_osf.setIcon(QtGui.QIcon.fromTheme('insert-link'))
 		self.button_link_data_to_osf.clicked.connect(self.__link_data_to_osf)
 		self.button_link_data_to_osf.setDisabled(True)
