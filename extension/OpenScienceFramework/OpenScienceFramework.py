@@ -40,6 +40,32 @@ __license__ = u"Apache2"
 from openscienceframework import widgets, events, manager
 from openscienceframework import connection as osf
 import os
+# For md5 and sha comparisons
+import hashlib
+# For easier python time handling
+import arrow
+
+def hashfile(path, hasher, blocksize=65536):
+	""" Creates a hash for the supplied file
+	
+	Parameters
+	----------
+	path : str
+		Path to the file to hash
+	hasher : hashlib.HASH
+		Hashing object, such as returned by hashlib.md5() or hashlib.sha256()
+	blocksize : int (default: 65536)
+		The buffersize to read the file with
+	
+	Returns:
+	str : the hasher.hexdigest() contents
+	"""
+	with open(os.path.abspath(path), 'rb') as afile:
+		buf = afile.read(blocksize)
+		while len(buf) > 0:
+			hasher.update(buf)
+			buf = afile.read(blocksize)
+	return hasher.hexdigest()
 
 class Notifier(QtCore.QObject):
 	""" Sends on messages to the notifier extension or shows a dialog box if
@@ -127,6 +153,19 @@ class Notifier(QtCore.QObject):
 		"""
 		self.extension_manager.fire('notify', message=message, category='primary',
 			always_show=True)
+
+class VersionChoiceDialog(QtWidgets.QDialog):
+	USE_LOCAL = 1
+	USE_REMOTE = 2
+
+	def __init__(self, *args, **kwargs):
+		self.local_version_info = kwargs.pop('local_version_info', None)
+		self.remote_version_info = kwargs.pop('remote_version_info', None)
+		super(VersionChoiceDialog, self).__init__(self, *args, **kwargs)
+		self.__setup_ui()
+
+	def __setup_ui(self):
+		pass
 
 class OpenScienceFramework(base_extension):
 	### public functions
@@ -238,8 +277,9 @@ class OpenScienceFramework(base_extension):
 		Parameters
 		----------
 		node_id : str
-			The id of the node. Either is a base64 string for a file, a subfolder 
-			in a repository or a <project_id:repo_name> pair
+			The id of the node. Either is a base64 string for a file or a subfolder 
+			in a repository, or a <project_id:repo_name> pair for a top-level (root)
+			repository node
 
 		Returns
 		-------
@@ -499,13 +539,13 @@ class OpenScienceFramework(base_extension):
 
 		# Link experiment to folder
 		self.button_link_exp_to_osf = QtWidgets.QPushButton(_(u'Link experiment'))
-		self.button_link_exp_to_osf.setIcon(QtGui.QIcon.fromTheme('insert-link'))
+		self.button_link_exp_to_osf.setIcon(QtGui.QIcon.fromTheme('gcolor2'))
 		self.button_link_exp_to_osf.clicked.connect(self.__link_experiment_to_osf)
 		self.button_link_exp_to_osf.setDisabled(True)
 
 		# Link data folder
 		self.button_link_data_to_osf = QtWidgets.QPushButton(_(u'Link data'))
-		self.button_link_data_to_osf.setIcon(QtGui.QIcon.fromTheme('insert-link'))
+		self.button_link_data_to_osf.setIcon(QtGui.QIcon.fromTheme('mail-inbox'))
 		self.button_link_data_to_osf.clicked.connect(self.__link_data_to_osf)
 		self.button_link_data_to_osf.setDisabled(True)
 		
@@ -542,6 +582,13 @@ class OpenScienceFramework(base_extension):
 		explorer.buttonsets['default'].append(self.button_open_from_osf)
 		explorer.buttonsets['default'].append(self.button_link_exp_to_osf)
 		explorer.buttonsets['default'].append(self.button_link_data_to_osf)
+
+		# Remove labels from default buttons
+		explorer.refresh_button.setText("")
+		explorer.new_folder_button.setText("")
+		explorer.delete_button.setText("")
+		explorer.upload_button.setText("")
+		explorer.download_button.setText("")
 
 	def __add_info_linked_widget(self, explorer):
 		# Create widget
@@ -631,6 +678,67 @@ class OpenScienceFramework(base_extension):
 			return
 		if self.experiment.var.osf_always_upload_experiment == u"yes":
 			self.checkbox_autosave_experiment.setCheckState(QtCore.Qt.Checked)
+
+		# Check if local and remote versions of experiment are in sync
+		self.compare_versions(data)
+
+	def compare_versions(self, data):
+		""" Check if currently opened experiment and the one linked on the OSF are
+		still in sync. Offer use the choice which file to use.
+			
+		Parameters
+		----------
+		data : dict or QtNetwork.QNetworkReply
+			The data of the remote file. If function is a callback for a HTTP
+			request function, this parameter can be a QNetworkReply object, which
+			is converted to the corresponding dict
+		"""
+		# If a QNetworkReply is passed, convert its data to a dict
+		if isinstance(data, QtNetwork.QNetworkReply):
+			data = json.loads(safe_decode(data.readAll().data()))
+
+		# Check validity of the currently opened file
+		local_file = self.main_window.current_path
+		if local_file and not os.path.isfile(local_file):
+			warnings.warn('No valid file specified')
+			return
+		
+		# Get remote sha256 hash from OSF
+		try:
+			remote_hash = data['data']['attributes']['extra']['hashes']['sha256']
+		except KeyError as e:
+			raise osf.OSFInvalidResponse("Unable to retrieve remote hash for "
+				" experiment: {}".format(e))
+
+		# Create a sha256 hash for the currently opened experiment
+		local_hash = hashfile(local_file, hashlib.sha256())
+
+		# If hashes are the same, then remote and local versions are the same
+		if remote_hash == local_hash:
+			self.notifier.info(_(u"In sync"), _(u"Experiment in sync with the "
+				"Open Science Framework"))
+			return
+		# If not, do some extra digging and provide the user with a choice of which
+		# version to keep
+		
+		# Get remote last modified time
+		try:
+			remote_modified = data['data']['attributes']['modified']
+		except KeyError as e:
+			raise osf.OSFInvalidResponse("Unable to retrieve remote hash for "
+				"experiment: {}".format(e))
+		# Convert to arrow object
+		remote_modified = arrow.get(remote_modified).to('local')
+		# Get local last modified time
+		local_modified = arrow.get(os.path.getmtime()).to('local')
+
+		# Show a dialog for the choice
+		choice_dialog = VersionChoiceDialog(self.main_window)
+		choice = choice_dialog.exec_()
+		if choice == choice_dialog.USE_REMOTE:
+			pass
+		else:
+			pass
 
 	def __process_datafolder_info(self, reply):
 		""" Callback for event_open_experiment """
@@ -1211,7 +1319,7 @@ class OpenScienceFramework(base_extension):
 		self.experiment.var.unset('osf_always_upload_data')
 		
 	### Other common utility functions
-	def __notify_sync_complete(self, message, source_file):
+	def __notify_sync_complete(self, message, data_to_send):
 		""" Callback for __prepare_experiment_sync and __prepare_experiment_data_sync.
 		Simply notifies if the syncing operation completed successfully. """
 		self.notifier.success(_(u'Sync success'), message)
