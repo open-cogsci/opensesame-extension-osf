@@ -696,7 +696,7 @@ class OpenScienceFramework(base_extension):
 		firstAction = self.user_badge.logged_in_menu.actions()[0]
 		show_explorer = QtWidgets.QAction(_(u"Show explorer"), 
 			self.user_badge.logged_in_menu)
-		show_explorer.triggered.connect(self.__show_explorer_tab)
+		show_explorer.triggered.connect(self.activate)
 		self.user_badge.logged_in_menu.insertAction(firstAction, show_explorer)
 
 		# Set-up project tree
