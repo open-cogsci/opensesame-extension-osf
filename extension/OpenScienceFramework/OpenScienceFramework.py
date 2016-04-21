@@ -190,8 +190,8 @@ class VersionChoiceDialog(QtWidgets.QDialog):
 		message_label = QtWidgets.QLabel()
 		message_label.setText(
 			_(u"This experiment is linked to the Open Science Framework. However, "
-				"the version on your computer differs from the one on the Open Science "
-				"Framework.\nWhich one would you like to use?"))
+				"the version on your computer differs from the one stored at the "
+				" Open Science Framework.\nWhich one would you like to use?"))
 		message_label.setWordWrap(True)
 		message_layout.addWidget(message_pixmap)
 		message_layout.addWidget(message_label)
@@ -200,6 +200,7 @@ class VersionChoiceDialog(QtWidgets.QDialog):
 		# Side by side view of the files
 		side_by_side = QtWidgets.QGridLayout()
 
+		# Get the OpenSesame icon to show for both local and remote versions
 		os_image = QtGui.QIcon.fromTheme('opera-widget-manager').pixmap(50, 50)
 		# Widget can only be assigned once to layout (so two need to be created
 		# even if they are identical by appearance)
@@ -212,9 +213,10 @@ class VersionChoiceDialog(QtWidgets.QDialog):
 
 		### Local file data
 		local_form_layout = QtWidgets.QFormLayout()
-
+		# Local header
 		local_title_label = QtWidgets.QLabel(_(u"<b>On this computer<b/>"))
 		local_title_label.setAlignment(QtCore.Qt.AlignCenter)
+		# Add some stats about the file
 		local_form_layout.addRow(local_title_label)
 		local_form_layout.addRow(os_local_img)
 		local_form_layout.addRow(_(u"Name:"), 
@@ -437,11 +439,15 @@ class OpenScienceFramework(base_extension):
 		# Create a sha256 hash for the currently opened experiment
 		local_hash = hashfile(local_file, hashlib.sha256())
 
-		# # If hashes are the same, then remote and local versions are the same
-		# if remote_hash == local_hash:
-		# 	self.notifier.info(_(u"In sync"), _(u"Experiment is synced with the "
-		# 		"Open Science Framework"))
-		# 	return
+		# Sync check is being done now, so set this flag to False before the first
+		# return is encountered.
+		self.sync_check_required = False
+
+		# If hashes are the same, then remote and local versions are the same
+		if remote_hash == local_hash:
+			self.notifier.info(_(u"In sync"), _(u"Experiment is synchronized with "
+				"the Open Science Framework"))
+			return
 			
 		# If not, do some extra digging and provide the user with a choice of which
 		# version to keep
@@ -502,7 +508,7 @@ class OpenScienceFramework(base_extension):
 				_(u"Create backup of local file"),
 				_(u"Do you want to save a backup of the experiment on this computer"
 					" using a different filename?"),
-				QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
+				QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
 			)
 			if reply == QtWidgets.QMessageBox.No:
 				break
@@ -523,34 +529,31 @@ class OpenScienceFramework(base_extension):
 				shutil.copy(self.main_window.current_path, destination)
 				break
 
-		# Download the version from the OSF and open it
+		# Download the version from the OSF and open it. Show a progress dialog
+		# if the file is large and will take a while to download.
 		# Some file providers do not report the size. Check for that here
-		if data['attributes']['size']:
+		if data['data']['attributes']['size']:
 			# Configure progress dialog
 			download_progress_dialog = QtWidgets.QProgressDialog()
 			download_progress_dialog.hide()
-			download_progress_dialog.setLabelText(_("Downloading") + " " + filename)
+			download_progress_dialog.setLabelText(_("Downloading") + " " + \
+				data['data']['attributes']['name'])
 			download_progress_dialog.setMinimum(0)
-			download_progress_dialog.setMaximum(data['attributes']['size'])
+			download_progress_dialog.setMaximum(data['data']['attributes']['size'])
 			progress_cb = self.project_explorer._transfer_progress
 		else:
 			download_progress_dialog = None
 			progress_cb = None
 		
-		# Download the file
+		# Download the file to open it later
 		self.manager.download_file(
-			download_url,
-			destination,
+			data['data']['links']['download'],
+			self.main_window.current_path,
 			downloadProgress=progress_cb,
 			progressDialog=download_progress_dialog,
 			finishedCallback=self.__experiment_downloaded,
-			osf_data=data
+			osf_data=data['data']
 		)
-
-
-
-
-
 
 	### OpenSesame events
 	def event_startup(self):
@@ -624,7 +627,8 @@ class OpenScienceFramework(base_extension):
 			self.experiment.var.has('osf_datanode_id'):
 			self.notifier.info(_(u'OSF link detected'),
 				_(u'This experiment is linked to the Open Science Framework. '
-					'Please login if you want to use the syncing functionalities'))
+					'Please login if you want to use the synchronization functionalities'))
+			self.sync_check_required = True
 
 	def event_process_data_files(self, data_files):
 		""" See if datafiles need to be saved to OSF """
@@ -666,11 +670,13 @@ class OpenScienceFramework(base_extension):
 	### Other internal events
 	def handle_login(self):
 		""" Event fired upon login to OSF """
-		self.action.setDisabled(False)
+		if self.sync_check_required and self.experiment.var.has('osf_id'):
+			self.manager.get_file_info(self.experiment.osf_id,
+				self.__process_file_info)
 
 	def handle_logout(self):
 		""" Event fired upon logout from the OSF """
-		self.action.setDisabled(True)
+		pass
 
 	### Private functions
 		
@@ -749,6 +755,11 @@ class OpenScienceFramework(base_extension):
 		# Initialize linked tree widget items
 		self.linked_experiment_treewidgetitem = None
 		self.linked_datanode_treewidgetitem = None
+
+		# Set to true, when an experiment is linked to the OSF, but no user is 
+		# currently logged in to the OSF. Upon login, the local file version is 
+		# checked against the linked on on the OSF to see if they are still synced.
+		self.sync_check_required = False
 
 	def __show_tree_context_menu(self, e):
 		item = self.project_tree.itemAt(e.pos())
@@ -939,12 +950,11 @@ class OpenScienceFramework(base_extension):
 		
 		self.set_linked_experiment(osf_file_path)
 		# See if always upload experiment flag has been set in the experiment
-		if not self.experiment.var.has('osf_always_upload_experiment'):
-			return
-		if self.experiment.var.osf_always_upload_experiment == u"yes":
+		if self.experiment.var.has('osf_always_upload_experiment') and \
+			self.experiment.var.osf_always_upload_experiment == u"yes":
 			self.checkbox_autosave_experiment.setCheckState(QtCore.Qt.Checked)
 
-		# Check if local and remote versions of experiment are in sync
+		# Check if local and remote versions of experiment are synced
 		self.compare_versions(data)
 
 	def __process_datafolder_info(self, reply):
@@ -1168,7 +1178,6 @@ class OpenScienceFramework(base_extension):
 				osf_data=data
 			)
 			
-
 	def __experiment_downloaded(self, reply, progressDialog, *args, **kwargs):
 		""" Callback for __open_osf_experiment() """
 
