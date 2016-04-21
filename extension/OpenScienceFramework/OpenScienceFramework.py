@@ -24,7 +24,7 @@ from __future__ import division
 from __future__ import print_function
 from __future__ import unicode_literals
 
-from qtpy import QtWidgets, QtCore, QtGui
+from qtpy import QtWidgets, QtCore, QtGui, QtNetwork
 
 from libqtopensesame.extensions import base_extension
 from libqtopensesame.misc.translate import translation_context
@@ -44,6 +44,10 @@ import os
 import hashlib
 # For easier python time handling
 import arrow
+# For human readable file sizes
+import humanize
+# File copying
+import shutil
 
 def hashfile(path, hasher, blocksize=65536):
 	""" Creates a hash for the supplied file
@@ -155,17 +159,125 @@ class Notifier(QtCore.QObject):
 			always_show=True)
 
 class VersionChoiceDialog(QtWidgets.QDialog):
-	USE_LOCAL = 1
-	USE_REMOTE = 2
+	USE_LOCAL = 2
+	USE_REMOTE = 3
 
 	def __init__(self, *args, **kwargs):
-		self.local_version_info = kwargs.pop('local_version_info', None)
-		self.remote_version_info = kwargs.pop('remote_version_info', None)
-		super(VersionChoiceDialog, self).__init__(self, *args, **kwargs)
+		try:
+			self.local_version_info = kwargs.pop('local_version_info')
+		except KeyError:
+			raise TypeError(u"Missing local_version_info dicationary argument")
+
+		try:
+			self.remote_version_info = kwargs.pop('remote_version_info')
+		except KeyError:
+			raise TypeError(u"Missing remote_version_info dicationary argument")
+
+		super(VersionChoiceDialog, self).__init__(*args, **kwargs)
 		self.__setup_ui()
 
 	def __setup_ui(self):
-		pass
+		self.setLayout(QtWidgets.QVBoxLayout())
+		# Message label
+		message_layout = QtWidgets.QHBoxLayout()
+		message_pixmap = QtWidgets.QLabel()
+		message_pixmap.setAlignment(QtCore.Qt.AlignTop)
+		message_pixmap.setSizePolicy(QtWidgets.QSizePolicy.Fixed,
+			QtWidgets.QSizePolicy.Minimum)
+		message_label_icon = QtGui.QIcon.fromTheme('dialog-warning')
+		message_pixmap.setPixmap(message_label_icon.pixmap(50,50))
+
+		message_label = QtWidgets.QLabel()
+		message_label.setText(
+			_(u"This experiment is linked to the Open Science Framework. However, "
+				"the version on your computer differs from the one on the Open Science "
+				"Framework.\nWhich one would you like to use?"))
+		message_label.setWordWrap(True)
+		message_layout.addWidget(message_pixmap)
+		message_layout.addWidget(message_label)
+
+		self.layout().addLayout(message_layout)
+		# Side by side view of the files
+		side_by_side = QtWidgets.QGridLayout()
+
+		os_image = QtGui.QIcon.fromTheme('opera-widget-manager').pixmap(50, 50)
+		# Widget can only be assigned once to layout (so two need to be created
+		# even if they are identical by appearance)
+		os_local_img = QtWidgets.QLabel()
+		os_local_img.setPixmap(os_image)
+		os_local_img.setAlignment(QtCore.Qt.AlignCenter)
+		os_remote_img = QtWidgets.QLabel()
+		os_remote_img.setPixmap(os_image)
+		os_remote_img.setAlignment(QtCore.Qt.AlignCenter)
+
+		### Local file data
+		local_form_layout = QtWidgets.QFormLayout()
+
+		local_title_label = QtWidgets.QLabel(_(u"<b>On this computer<b/>"))
+		local_title_label.setAlignment(QtCore.Qt.AlignCenter)
+		local_form_layout.addRow(local_title_label)
+		local_form_layout.addRow(os_local_img)
+		local_form_layout.addRow(_(u"Name:"), 
+			QtWidgets.QLabel(self.local_version_info['name'])),
+		
+		# If filesize is given as int, humanize it to comprehensible notations
+		if type(self.local_version_info['filesize']) in [int]: #, long]: (no longer exists?)
+			self.local_version_info['filesize'] = humanize.naturalsize(
+				self.local_version_info['filesize'])
+		local_form_layout.addRow(_(u"Size:"), 
+			QtWidgets.QLabel(self.local_version_info['filesize']))
+		# Convert to arrow object for easier date/time handling (does nothing
+		# if already an arrow object)
+		local_last_modified = arrow.get(self.local_version_info['modified'])
+		local_form_layout.addRow(_(u"Last modified:"), 
+			QtWidgets.QLabel("{} ({})".format(
+				local_last_modified.format('YYYY-MM-DD HH:mm'),
+				local_last_modified.humanize()
+			))
+		)
+
+		### Remote file data
+		remote_form_layout = QtWidgets.QFormLayout()
+		remote_title_label = QtWidgets.QLabel(_(u"<b>On the Open Science Framework</b>"))
+		remote_title_label.setAlignment(QtCore.Qt.AlignCenter)
+		remote_form_layout.addRow(remote_title_label)
+		remote_form_layout.addRow(os_remote_img)
+		remote_form_layout.addRow(_(u"Name:"), 
+			QtWidgets.QLabel(self.remote_version_info['name']))
+		
+		# If filesize is given as int, humanize it to comprehensible notations
+		if type(self.remote_version_info['filesize']) in [int]: # , long]:
+			self.remote_version_info['filesize'] = humanize.naturalsize(
+				self.remote_version_info['filesize'])
+		remote_form_layout.addRow(_(u"Size:"), 
+			QtWidgets.QLabel(self.remote_version_info['filesize']))
+		
+		# Convert to arrow object for easier date/time handling (does nothing
+		# if already an arrow object)
+		remote_last_modified = arrow.get(self.remote_version_info['modified'])
+		remote_form_layout.addRow(_(u"Last modified:"), 
+			QtWidgets.QLabel("{} ({})".format(
+				remote_last_modified.format('YYYY-MM-DD HH:mm'),
+				remote_last_modified.humanize()
+			))
+		)
+
+		# Buttons
+		self.button_use_local = QtWidgets.QPushButton(_(u"Use version on this computer"))
+		self.button_use_local.clicked.connect(lambda: self.done(self.USE_LOCAL))
+		self.button_use_remote = QtWidgets.QPushButton(_(u"Use version from the OSF"))
+		self.button_use_remote.clicked.connect(lambda: self.done(self.USE_REMOTE))
+
+		# Connect layouts
+		local_form_layout.addRow(self.button_use_local)
+		remote_form_layout.addRow(self.button_use_remote)
+		side_by_side.addLayout(local_form_layout,1,1)
+		side_by_side.addLayout(remote_form_layout,1,2)
+		self.layout().addLayout(side_by_side)
+
+		# Set fixed size, allow a bit more breathing space in vertical dimension
+		minimum_size = self.minimumSizeHint()
+		self.setFixedSize(minimum_size.width(),minimum_size.height()+20)
 
 class OpenScienceFramework(base_extension):
 	### public functions
@@ -294,6 +406,152 @@ class OpenScienceFramework(base_extension):
 		else:
 			return osf.api_call('file_info', node_id)
 
+	def compare_versions(self, data):
+		""" Check if currently opened experiment and the one linked on the OSF are
+		still in sync. Offer use the choice which file to use.
+			
+		Parameters
+		----------
+		data : dict or QtNetwork.QNetworkReply
+			The data of the remote file. If function is a callback for a HTTP
+			request function, this parameter can be a QNetworkReply object, which
+			is converted to the corresponding dict
+		"""
+		# If a QNetworkReply is passed, convert its data to a dict
+		if isinstance(data, QtNetwork.QNetworkReply):
+			data = json.loads(safe_decode(data.readAll().data()))
+
+		# Check validity of the currently opened file
+		local_file = self.main_window.current_path
+		if local_file and not os.path.isfile(local_file):
+			warnings.warn('No valid file specified')
+			return
+		
+		# Get remote sha256 hash from OSF
+		try:
+			remote_hash = data['data']['attributes']['extra']['hashes']['sha256']
+		except KeyError as e:
+			raise osf.OSFInvalidResponse("Unable to retrieve remote hash for "
+				" experiment: {}".format(e))
+
+		# Create a sha256 hash for the currently opened experiment
+		local_hash = hashfile(local_file, hashlib.sha256())
+
+		# # If hashes are the same, then remote and local versions are the same
+		# if remote_hash == local_hash:
+		# 	self.notifier.info(_(u"In sync"), _(u"Experiment is synced with the "
+		# 		"Open Science Framework"))
+		# 	return
+			
+		# If not, do some extra digging and provide the user with a choice of which
+		# version to keep
+		
+		# Get remote file information
+		try:
+			remote_name = data['data']['attributes']['name']
+			remote_size = data['data']['attributes']['size']
+			remote_modified = data['data']['attributes']['date_modified']
+		except KeyError as e:
+			raise osf.OSFInvalidResponse("Unable to retrieve remote file info of"
+				" experiment: {}".format(e))
+		# Create an arrow time object converted to the local timezone
+		remote_modified = arrow.get(remote_modified).to('local')
+
+		# Get local file info
+		# name
+		local_name = os.path.basename(local_file)
+		# size
+		local_size = os.path.getsize(local_file)
+		# last modified time
+		local_modified = arrow.get(os.path.getmtime(local_file)).to('local')
+		
+		local_info = {
+			'name': local_name,
+			'modified': local_modified,
+			'filesize': local_size
+		}
+
+		remote_info = {
+			'name': remote_name,
+			'modified': remote_modified,
+			'filesize': remote_size
+		}
+
+		# Show a dialog for the choice
+		choice_dialog = VersionChoiceDialog(
+			self.main_window,
+			QtCore.Qt.FramelessWindowHint,
+			local_version_info=local_info,
+			remote_version_info=remote_info,
+		)
+
+		choice = 0
+		while not choice:
+			choice = choice_dialog.exec_()
+		
+		# If use closes dialog with close button, 0 will be returned...
+		if choice == choice_dialog.USE_LOCAL:
+			# If local version should be used, then we're done here
+			return
+		
+		# A weird loop, but the user should not be allowed to choose Yes to the
+		# the backup question and not save the file (by pressing cancel for instance)
+		while True:
+			reply = QtWidgets.QMessageBox.question(
+				self.main_window,
+				_(u"Create backup of local file"),
+				_(u"Do you want to save a backup of the experiment on this computer"
+					" using a different filename?"),
+				QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Yes
+			)
+			if reply == QtWidgets.QMessageBox.No:
+				break
+			if reply == QtWidgets.QMessageBox.Yes:
+				destination = QtWidgets.QFileDialog.getSaveFileName(
+					self.main_window,
+					_("Backup experiment to"),
+					self.main_window.current_path,
+				)
+				# PyQt5 returns a tuple, because it actually performs the function of
+				# PyQt4's getSaveFileNameAndFilter() function
+				if isinstance(destination, tuple):
+					destination = destination[0]
+				# Ask user again if he or she wants to make a backup
+				if not destination:
+					continue
+				# Copy the current experiment to the new path
+				shutil.copy(self.main_window.current_path, destination)
+				break
+
+		# Download the version from the OSF and open it
+		# Some file providers do not report the size. Check for that here
+		if data['attributes']['size']:
+			# Configure progress dialog
+			download_progress_dialog = QtWidgets.QProgressDialog()
+			download_progress_dialog.hide()
+			download_progress_dialog.setLabelText(_("Downloading") + " " + filename)
+			download_progress_dialog.setMinimum(0)
+			download_progress_dialog.setMaximum(data['attributes']['size'])
+			progress_cb = self.project_explorer._transfer_progress
+		else:
+			download_progress_dialog = None
+			progress_cb = None
+		
+		# Download the file
+		self.manager.download_file(
+			download_url,
+			destination,
+			downloadProgress=progress_cb,
+			progressDialog=download_progress_dialog,
+			finishedCallback=self.__experiment_downloaded,
+			osf_data=data
+		)
+
+
+
+
+
+
 	### OpenSesame events
 	def event_startup(self):
 		""" OpenSesame event on startup of the program. Initialize the extension"""
@@ -365,9 +623,8 @@ class OpenScienceFramework(base_extension):
 		elif self.experiment.var.has('osf_id') or \
 			self.experiment.var.has('osf_datanode_id'):
 			self.notifier.info(_(u'OSF link detected'),
-				_(u'This experiment seems to be linked to the Open Science '
-					'Framework. Please login if you want to use the syncing '
-					'functionalities'))
+				_(u'This experiment is linked to the Open Science Framework. '
+					'Please login if you want to use the syncing functionalities'))
 
 	def event_process_data_files(self, data_files):
 		""" See if datafiles need to be saved to OSF """
@@ -615,6 +872,10 @@ class OpenScienceFramework(base_extension):
 		self.widget_autosave_experiment.setLayout(autosave_exp_layout)
 		autosave_exp_label = QtWidgets.QLabel(_(u"Always upload experiment on save"))
 		self.checkbox_autosave_experiment = QtWidgets.QCheckBox()
+		self.checkbox_autosave_experiment.setToolTip(_(
+			u"If this box is checked OpenSesame will not ask for permission to\n"
+			"upload an experiment to the OSF and will always do so after an experiment\n"
+			"has been saved."))
 		self.checkbox_autosave_experiment.stateChanged.connect(
 			self.__handle_check_autosave_experiment)
 		autosave_exp_layout.addWidget(self.checkbox_autosave_experiment)
@@ -627,6 +888,10 @@ class OpenScienceFramework(base_extension):
 		autosave_data_layout.setContentsMargins(0, 0, 0, 0)
 		self.widget_autosave_data.setLayout(autosave_data_layout)
 		self.checkbox_autosave_data = QtWidgets.QCheckBox()
+		self.checkbox_autosave_data.setToolTip(_(
+			u"If this box is checked OpenSesame will not ask for permission to\n"
+			"upload collected data to the OSF and will always do so after an experiment\n"
+			"has (successfully) finished."))
 		self.checkbox_autosave_data.stateChanged.connect(
 			self.__handle_check_autosave_data)
 		autosave_data_label = QtWidgets.QLabel(_(u"Always upload collected data"))
@@ -681,64 +946,6 @@ class OpenScienceFramework(base_extension):
 
 		# Check if local and remote versions of experiment are in sync
 		self.compare_versions(data)
-
-	def compare_versions(self, data):
-		""" Check if currently opened experiment and the one linked on the OSF are
-		still in sync. Offer use the choice which file to use.
-			
-		Parameters
-		----------
-		data : dict or QtNetwork.QNetworkReply
-			The data of the remote file. If function is a callback for a HTTP
-			request function, this parameter can be a QNetworkReply object, which
-			is converted to the corresponding dict
-		"""
-		# If a QNetworkReply is passed, convert its data to a dict
-		if isinstance(data, QtNetwork.QNetworkReply):
-			data = json.loads(safe_decode(data.readAll().data()))
-
-		# Check validity of the currently opened file
-		local_file = self.main_window.current_path
-		if local_file and not os.path.isfile(local_file):
-			warnings.warn('No valid file specified')
-			return
-		
-		# Get remote sha256 hash from OSF
-		try:
-			remote_hash = data['data']['attributes']['extra']['hashes']['sha256']
-		except KeyError as e:
-			raise osf.OSFInvalidResponse("Unable to retrieve remote hash for "
-				" experiment: {}".format(e))
-
-		# Create a sha256 hash for the currently opened experiment
-		local_hash = hashfile(local_file, hashlib.sha256())
-
-		# If hashes are the same, then remote and local versions are the same
-		if remote_hash == local_hash:
-			self.notifier.info(_(u"In sync"), _(u"Experiment in sync with the "
-				"Open Science Framework"))
-			return
-		# If not, do some extra digging and provide the user with a choice of which
-		# version to keep
-		
-		# Get remote last modified time
-		try:
-			remote_modified = data['data']['attributes']['modified']
-		except KeyError as e:
-			raise osf.OSFInvalidResponse("Unable to retrieve remote hash for "
-				"experiment: {}".format(e))
-		# Convert to arrow object
-		remote_modified = arrow.get(remote_modified).to('local')
-		# Get local last modified time
-		local_modified = arrow.get(os.path.getmtime()).to('local')
-
-		# Show a dialog for the choice
-		choice_dialog = VersionChoiceDialog(self.main_window)
-		choice = choice_dialog.exec_()
-		if choice == choice_dialog.USE_REMOTE:
-			pass
-		else:
-			pass
 
 	def __process_datafolder_info(self, reply):
 		""" Callback for event_open_experiment """
@@ -952,17 +1159,15 @@ class OpenScienceFramework(base_extension):
 				progress_cb = None
 			
 			# Download the file
-			try:
-				self.manager.download_file(
-					download_url,
-					destination,
-					downloadProgress=progress_cb,
-					progressDialog=download_progress_dialog,
-					finishedCallback=self.__experiment_downloaded,
-					osf_data=data
-				)
-			except Exception as e:
-				print(e)
+			self.manager.download_file(
+				download_url,
+				destination,
+				downloadProgress=progress_cb,
+				progressDialog=download_progress_dialog,
+				finishedCallback=self.__experiment_downloaded,
+				osf_data=data
+			)
+			
 
 	def __experiment_downloaded(self, reply, progressDialog, *args, **kwargs):
 		""" Callback for __open_osf_experiment() """
