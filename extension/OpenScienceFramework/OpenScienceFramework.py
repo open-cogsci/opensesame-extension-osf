@@ -612,8 +612,18 @@ class OpenScienceFramework(base_extension):
 			# Check if a node to upload data to has been linked for this experiment
 			# If so, display this information in the OSF explorer.
 			if self.experiment.var.has('osf_datanode_id'):
-				self.manager.get_file_info(self.experiment.osf_datanode_id,
-					self.__process_datafolder_info)
+				# Ids for root level locations (i.e. the root of repository) differ
+				# from those of subfolder locations. Both require a different API call
+				# to get the same find of information, so construct those accordingly
+				# A root level location will contain a colon
+				if not ":" in self.experiment.var.osf_datanode_id:
+					self.manager.get_file_info(self.experiment.osf_datanode_id,
+						self.__process_datafolder_info)
+				else:
+					project_id, repo = self.experiment.var.osf_datanode_id.split(':')
+					# For the OSF 
+					api_call = osf.api_call('repo_files', project_id, repo)
+					self.__process_datafolder_info(api_call)
 			else:
 				# Reset GUI if this data is not present
 				self.set_linked_experiment_datanode(None)
@@ -639,6 +649,10 @@ class OpenScienceFramework(base_extension):
 			not self.manager.logged_in_user:
 			return
 	
+		# Do not upload the quickrun.csv resulting from a test run
+		if len(data_files) == 1 and os.path.basename(data_files[0]) == "quickrun.csv":
+			return
+
 		# If the autosave checkbox is not checked, ask the user for permission
 		# to upload the data to OSF
 		if not self.experiment.var.has('osf_always_upload_data') or \
@@ -705,6 +719,8 @@ class OpenScienceFramework(base_extension):
 		self.project_tree.currentItemChanged.connect(self.__set_button_availabilty)
 		# Mark the items in the tree that are linked to this experiment
 		self.project_tree.refreshFinished.connect(self.__mark_linked_nodes)
+		# Handle double clicks on items
+		self.project_tree.itemDoubleClicked.connect(self.__item_double_clicked)
 		# Add extra column for remarks
 		self.project_tree.setColumnCount(self.project_tree.columnCount()+1)
 		header = self.project_tree.headerItem()
@@ -760,6 +776,11 @@ class OpenScienceFramework(base_extension):
 		# currently logged in to the OSF. Upon login, the local file version is 
 		# checked against the linked on on the OSF to see if they are still synced.
 		self.sync_check_required = False
+
+		# If a valid stored token is found, read that in an dispatch login event
+		if self.manager.check_for_stored_token(self.manager.tokenfile):
+			self.manager.dispatcher.dispatch_login()
+			return
 
 	def __show_tree_context_menu(self, e):
 		item = self.project_tree.itemAt(e.pos())
@@ -959,18 +980,24 @@ class OpenScienceFramework(base_extension):
 
 	def __process_datafolder_info(self, reply):
 		""" Callback for event_open_experiment """
-		data = json.loads(safe_decode(reply.readAll().data()))
-		try:
-			osf_folder_path = data['data']['links']['self']
-		except KeyError as e:
-			warnings.warn('Invalid OSF response format: {}'.format(e))
-		else:
-			self.set_linked_experiment_datanode(osf_folder_path)
-			# See if always upload data flag has been set in the experiment
-			if not self.experiment.var.has('osf_always_upload_data'):
+		if isinstance(reply, QtNetwork.QNetworkReply):
+			data = json.loads(safe_decode(reply.readAll().data()))
+			try:
+				osf_folder_path = data['data']['links']['self']
+			except KeyError as e:
+				warnings.warn('Invalid OSF response format: {}'.format(e))
 				return
-			if self.experiment.var.osf_always_upload_data == u"yes":
-				self.checkbox_autosave_data.setCheckState(QtCore.Qt.Checked)
+		elif isinstance(reply, str):
+			osf_folder_path = reply
+		else:
+			raise ValueError("Invalid argument for reply")
+
+		self.set_linked_experiment_datanode(osf_folder_path)
+		# See if always upload data flag has been set in the experiment
+		if not self.experiment.var.has('osf_always_upload_data'):
+			return
+		if self.experiment.var.osf_always_upload_data == u"yes":
+			self.checkbox_autosave_data.setCheckState(QtCore.Qt.Checked)
 
 	def __set_button_availabilty(self, tree_widget_item, col):
 		""" Handles the QTreeWidget currentItemChanged event.
@@ -1038,6 +1065,25 @@ class OpenScienceFramework(base_extension):
 		font.setItalic(False)
 		item.setFont(columns-1,font)
 
+	def __mark_linked_nodes(self):
+		""" Callback for self.tree.refreshFinished. Marks all files that are
+		connected to the OSF in the tree. """
+		
+		iterator = QtWidgets.QTreeWidgetItemIterator(self.project_tree)
+		while(iterator.value()):
+			item = iterator.value()
+			item_data = item.data(0,QtCore.Qt.UserRole)
+			# Mark linked experiment
+			if self.experiment.var.has('osf_id'):
+				if item_data['id'] == self.experiment.var.osf_id:
+					self.__mark_treewidget_item(item, _(u"Linked experiment"))
+					self.linked_experiment_treewidgetitem = item
+			if self.experiment.var.has('osf_datanode_id'):
+				if item_data['id'] == self.experiment.var.osf_datanode_id:
+					self.__mark_treewidget_item(item, _(u"Linked data folder"))
+					self.linked_datanode_treewidgetitem = item
+			iterator += 1
+
 	### PyQt slots
 
 	def __show_explorer_tab(self):
@@ -1058,24 +1104,20 @@ class OpenScienceFramework(base_extension):
 		else:
 			self.experiment.var.osf_always_upload_data = u"no"
 
-	def __mark_linked_nodes(self):
-		""" Callback for self.tree.refreshFinished. Marks all files that are
-		connected to the OSF in the tree. """
+	def __item_double_clicked(self, item):
+		""" Handles doubleclick of treeWidgetItem """
+		data = item.data(0, QtCore.Qt.UserRole)
+		kind = data["attributes"]["kind"]
 		
-		iterator = QtWidgets.QTreeWidgetItemIterator(self.project_tree)
-		while(iterator.value()):
-			item = iterator.value()
-			item_data = item.data(0,QtCore.Qt.UserRole)
-			# Mark linked experiment
-			if self.experiment.var.has('osf_id'):
-				if item_data['id'] == self.experiment.var.osf_id:
-					self.__mark_treewidget_item(item, _(u"Linked experiment"))
-					self.linked_experiment_treewidgetitem = item
-			if self.experiment.var.has('osf_datanode_id'):
-				if item_data['id'] == self.experiment.var.osf_datanode_id:
-					self.__mark_treewidget_item(item, _(u"Linked data folder"))
-					self.linked_datanode_treewidgetitem = item
-			iterator += 1
+		if kind == "file":
+			name = data["attributes"]["name"]
+			# Open if OpenSesame experiment
+			if widgets.check_if_opensesame_file(name, True):
+				self.__open_osf_experiment()
+			# Download if other type of file
+			else:
+				self.project_explorer._clicked_download_file()
+	
 
 	### Actions for experiments
 
