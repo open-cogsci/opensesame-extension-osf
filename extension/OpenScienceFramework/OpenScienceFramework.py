@@ -37,8 +37,8 @@ _ = translation_context(u'OpenScienceFramework', category=u'extension')
 __author__ = u"Daniel Schreij"
 __license__ = u"Apache2"
 
-from openscienceframework import widgets, events, manager
-from openscienceframework import connection as osf
+from QOpenScienceFramework import widgets, events, manager
+from QOpenScienceFramework import connection as osf
 import os
 # For md5 and sha comparisons
 import hashlib
@@ -533,24 +533,18 @@ class OpenScienceFramework(base_extension):
 		# if the file is large and will take a while to download.
 		# Some file providers do not report the size. Check for that here
 		if data['data']['attributes']['size']:
-			# Configure progress dialog
-			download_progress_dialog = QtWidgets.QProgressDialog()
-			download_progress_dialog.hide()
-			download_progress_dialog.setLabelText(_("Downloading") + " " + \
-				data['data']['attributes']['name'])
-			download_progress_dialog.setMinimum(0)
-			download_progress_dialog.setMaximum(data['data']['attributes']['size'])
-			progress_cb = self.project_explorer._transfer_progress
+			progress_dialog_data={
+				"filename": data['data']['attributes']['name'],
+				"filesize": data['data']['attributes']['size']
+			}
 		else:
-			download_progress_dialog = None
-			progress_cb = None
+			progress_dialog_data = None
 		
 		# Download the file to open it later
 		self.manager.download_file(
 			data['data']['links']['download'],
 			self.main_window.current_path,
-			downloadProgress=progress_cb,
-			progressDialog=download_progress_dialog,
+			progressDialog=progress_dialog_data,
 			finishedCallback=self.__experiment_downloaded,
 			osf_data=data['data']
 		)
@@ -687,10 +681,11 @@ class OpenScienceFramework(base_extension):
 		if self.sync_check_required and self.experiment.var.has('osf_id'):
 			self.manager.get_file_info(self.experiment.osf_id,
 				self.__process_file_info)
+		self.info_widget.setEnabled(True)
 
 	def handle_logout(self):
 		""" Event fired upon logout from the OSF """
-		pass
+		self.info_widget.setEnabled(False)
 
 	### Private functions
 		
@@ -702,7 +697,10 @@ class OpenScienceFramework(base_extension):
 		self.notifier = Notifier(self.extension_manager)
 
 		# Create manager object
-		self.manager = manager.ConnectionManager(tokenfile, self.notifier)
+		self.manager = manager.ConnectionManager(
+			self.main_window,
+			tokenfile=tokenfile, 
+			notifier=self.notifier)
 
 		# Init and set up user badge
 		icon_size = self.toolbar.iconSize()
@@ -881,7 +879,7 @@ class OpenScienceFramework(base_extension):
 
 	def __add_info_linked_widget(self, explorer):
 		# Create widget
-		info_widget = QtWidgets.QWidget()
+		self.info_widget = QtWidgets.QWidget()
 
 		# Set up layout
 		info_layout = QtWidgets.QGridLayout()
@@ -942,20 +940,20 @@ class OpenScienceFramework(base_extension):
 		info_layout.addWidget(self.linked_data_value, 2, 2)
 		info_layout.addWidget(self.button_unlink_data, 2, 3)
 		info_layout.addWidget(self.widget_autosave_data, 2, 4)
-		info_widget.setLayout(info_layout)
+		self.info_widget.setLayout(info_layout)
 
-		info_widget.setContentsMargins(0, 0, 0, 0)
-		info_widget.layout().setContentsMargins(0, 0, 0, 0)
+		self.info_widget.setContentsMargins(0, 0, 0, 0)
+		self.info_widget.layout().setContentsMargins(0, 0, 0, 0)
 
 		# Make sure the column containing the linked location info takes up the
 		# most space
 		info_layout.setColumnStretch(2, 1)
 
-		# Make sure the info_widget is vertically as small as possible.
-		info_widget.setSizePolicy(QtWidgets.QSizePolicy.Minimum, 
+		# Make sure the self.info_widget is vertically as small as possible.
+		self.info_widget.setSizePolicy(QtWidgets.QSizePolicy.Minimum, 
 			QtWidgets.QSizePolicy.Fixed)
 		
-		explorer.main_layout.insertWidget(1, info_widget)
+		explorer.main_layout.insertWidget(1, self.info_widget)
 
 	def __process_file_info(self, reply):
 		""" Callback for event_open_experiment """
@@ -966,7 +964,8 @@ class OpenScienceFramework(base_extension):
 		try:
 			osf_file_path = data['data']['links']['self']
 		except KeyError as e:
-			warnings.warn('Invalid OSF response format: {}'.format(e))
+			raise osf.OSFInvalidResponse('Invalid file info response format: '
+				'{}'.format(e))
 			return
 		
 		self.set_linked_experiment(osf_file_path)
@@ -985,7 +984,8 @@ class OpenScienceFramework(base_extension):
 			try:
 				osf_folder_path = data['data']['links']['self']
 			except KeyError as e:
-				warnings.warn('Invalid OSF response format: {}'.format(e))
+				raise osf.OSFInvalidResponse('Invalid OSF datafolder response format: '
+					'{}'.format(e))
 				return
 		elif isinstance(reply, str):
 			osf_folder_path = reply
@@ -1105,7 +1105,7 @@ class OpenScienceFramework(base_extension):
 			self.experiment.var.osf_always_upload_data = u"no"
 
 	def __item_double_clicked(self, item):
-		""" Handles doubleclick of treeWidgetItem """
+		""" Handles doubleclick on treeWidgetItem """
 		data = item.data(0, QtCore.Qt.UserRole)
 		kind = data["attributes"]["kind"]
 		
@@ -1118,7 +1118,6 @@ class OpenScienceFramework(base_extension):
 			else:
 				self.project_explorer._clicked_download_file()
 	
-
 	### Actions for experiments
 
 	def __prepare_experiment_sync(self, reply, *args, **kwargs):
@@ -1143,22 +1142,18 @@ class OpenScienceFramework(base_extension):
 
 		# Create a progress dialog to show upload status for large experiments
 		# that take a while to transfer
-		progress_dialog = QtWidgets.QProgressDialog()
-		progress_dialog.hide()
-		progress_dialog.setLabelText(_(u"Please wait. Syncing") + u" " \
-			+ file_to_upload.fileName())
-		progress_dialog.setMinimum(0)
-		progress_dialog.setMaximum(file_to_upload.size())
-
+		progress_dialog_data={
+			"filename": file_to_upload.fileName(),
+			"filesize": file_to_upload.size()
+		}
+		
 		self.manager.upload_file(
 			upload_url,
 			file_to_upload,
-			uploadProgress=self.project_explorer._transfer_progress,
-			progressDialog=progress_dialog,
+			progressDialog=progress_dialog_data,
 			finishedCallback=self.project_explorer._upload_finished,
 			afterUploadCallback=self.__notify_sync_complete,
-			message=_(u"Experiment"
-				" successfully synced to the Open Science Framework")
+			message=_(u"Experiment successfully synced to the Open Science Framework")
 		)
 
 	def __open_osf_experiment(self):
@@ -1198,35 +1193,27 @@ class OpenScienceFramework(base_extension):
 			# Remember this folder for later when this dialog has to be presented again
 			self.last_dl_destination_folder = os.path.dirname(destination)
 			# Some file providers do not report the size. Check for that here
+			# Configure progress dialog (only if filesize is known)
 			if data['attributes']['size']:
-				# Configure progress dialog
-				download_progress_dialog = QtWidgets.QProgressDialog()
-				download_progress_dialog.hide()
-				download_progress_dialog.setLabelText(_("Downloading") + " " + filename)
-				download_progress_dialog.setMinimum(0)
-				download_progress_dialog.setMaximum(data['attributes']['size'])
-				progress_cb = self.project_explorer._transfer_progress
+				progress_dialog_data={
+					"filename": filename,
+					"filesize": data['attributes']['size']
+				}
 			else:
-				download_progress_dialog = None
-				progress_cb = None
+				progress_dialog_data = None
 			
 			# Download the file
 			self.manager.download_file(
 				download_url,
 				destination,
-				downloadProgress=progress_cb,
-				progressDialog=download_progress_dialog,
+				progressDialog=progress_dialog_data,
 				finishedCallback=self.__experiment_downloaded,
 				osf_data=data
 			)
 			
-	def __experiment_downloaded(self, reply, progressDialog, *args, **kwargs):
+	def __experiment_downloaded(self, reply, *args, **kwargs):
 		""" Callback for __open_osf_experiment() """
-
 		saved_exp_location = kwargs.get('destination')
-	
-		if isinstance(progressDialog, QtWidgets.QWidget):
-			progressDialog.deleteLater()
 
 		# Open experiment in OpenSesame
 		self.main_window.open_file(path=saved_exp_location, add_to_recent=True)
@@ -1246,15 +1233,17 @@ class OpenScienceFramework(base_extension):
 	### Actions for experiment data
 	
 	def __prepare_experiment_data_sync_get_upload_url(self, reply, data_files, node_id):
+		""" Callback for event_process_data_files(). Constructs the correct api
+		endpoint to upload the files to."""
 		data = json.loads(safe_decode(reply.readAll().data()))['data']
 
 		if isinstance(data, dict):
-			#probabaly a subfolder of a repo
+			#A dictionary represents a subfolder in a repo.
 			try:
 				upload_url = data['links']['upload']
 				files_url = data['relationships']['files']['links']['related']['href']
 			except KeyError as e:
-				warnings.warn("Invalid OSF data structure: {}".format(e))
+				raise osf.OSFInvalidResponse("Invalid OSF data structure: {}".format(e))
 				return
 		if isinstance(data, list):
 			# Probably a listing of project repositories
@@ -1269,7 +1258,7 @@ class OpenScienceFramework(base_extension):
 				upload_url = node['links']['upload']
 				files_url = node['relationships']['files']['links']['related']['href']
 			except KeyError as e:
-				warnings.warn("Invalid OSF data structure: {}".format(e))
+				raise osf.OSFInvalidResponse("Invalid OSF data structure: {}".format(e))
 				return
 
 		# Check for duplicates
@@ -1277,16 +1266,14 @@ class OpenScienceFramework(base_extension):
 			data_files=data_files, upload_url=upload_url)
 
 	def __prepare_experiment_data_sync(self, reply, data_files, upload_url):
-		""" Callback for event_process_data_files.
-
-		Retrieves the correct upload link for experiment data on the OSF.
-		Checks if the files to upload are not already present in the folder."""
+		""" Callback for __prepare_experiment_data_sync_get_upload_url.
+		Now that the upload url is known, prepare the upload for real."""
 		# Parse the response
 		data = json.loads(safe_decode(reply.readAll().data()))['data']
 
 		# Generate a list of files already present in this folder
 		present_files = [f['attributes']['name'] for f in data]
-
+		# Process all the datafiles to be uploaded
 		for data_file in data_files:
 			# Check if data file is already present on the server
 			filename = os.path.basename(data_file)
@@ -1300,16 +1287,11 @@ class OpenScienceFramework(base_extension):
 				)
 				if reply == QtWidgets.QMessageBox.No:
 					continue
-
+				# Get the node data for the duplicate file found on OSF. For this
+				# we need to iterate over the list of dictionaries provided by the
+				# OSF and find the relevant node.
 				file_on_osf = next((item for item in data if \
 					item['attributes']['name'] == filename), None)
-
-				# Safety check, should never occur because it's logically
-				# impossible, but hey...
-				if not file_on_osf:
-					warnings.warn(_(u"Something went wrong at checking for duplicate "
-						"file: {}".format(filename)))
-					continue
 				file_upload_url = file_on_osf['links']['upload']
 				upload_url = "{}?kind=file".format(file_upload_url)
 			else:
@@ -1321,18 +1303,15 @@ class OpenScienceFramework(base_extension):
 
 			# Create a progress dialog to show upload status for large experiments
 			# that take a while to transfer
-			progress_dialog = QtWidgets.QProgressDialog()
-			progress_dialog.hide()
-			progress_dialog.setLabelText(_(u"Please wait. Syncing") + u" " \
-				+ file_to_upload.fileName())
-			progress_dialog.setMinimum(0)
-			progress_dialog.setMaximum(file_to_upload.size())
+			progress_dialog_data={
+				"filename": file_to_upload.fileName(),
+				"filesize": file_to_upload.size()
+			}
 
 			self.manager.upload_file(
 				upload_url,
 				file_to_upload,
-				uploadProgress=self.project_explorer._transfer_progress,
-				progressDialog=progress_dialog,
+				progressDialog=progress_dialog_data,
 				finishedCallback=self.project_explorer._upload_finished,
 				afterUploadCallback=self.__notify_sync_complete,
 				message=_(u"{} successfully synced to the Open Science "
@@ -1408,20 +1387,18 @@ class OpenScienceFramework(base_extension):
 			upload_url = old_item_data['links']['upload']
 			upload_url += '?kind=file'
 
+
 		# Create a progress dialog to show upload status for large experiments
 		# that take a while to transfer
-		progress_dialog = QtWidgets.QProgressDialog()
-		progress_dialog.hide()
-		progress_dialog.setLabelText(_(u"Please wait. Syncing") + u" " \
-			+ file_to_upload.fileName())
-		progress_dialog.setMinimum(0)
-		progress_dialog.setMaximum(file_to_upload.size())
+		progress_dialog_data={
+			"filename": file_to_upload.fileName(),
+			"filesize": file_to_upload.size()
+		}
 
 		self.manager.upload_file(
 			upload_url,
 			file_to_upload,
-			uploadProgress=self.project_explorer._transfer_progress,
-			progressDialog=progress_dialog,
+			progressDialog=progress_dialog_data,
 			finishedCallback=self.project_explorer._upload_finished,
 			afterUploadCallback=self.__link_experiment_succeeded,
 			selectedTreeItem=selected_item,
@@ -1543,7 +1520,7 @@ class OpenScienceFramework(base_extension):
 		self.experiment.var.osf_datanode_id = data['id']
 		self.set_linked_experiment_datanode(node_url)
 
-		# Mark the current item as linked, and unmark the old one if present
+		# Mark the current item as linked, and unmark the previous one if present
 		if isinstance(self.linked_datanode_treewidgetitem, 
 			QtWidgets.QTreeWidgetItem) and selected_item:
 			self.__unmark_treewidget_item(self.linked_datanode_treewidgetitem)
