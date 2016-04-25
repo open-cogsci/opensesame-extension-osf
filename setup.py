@@ -29,7 +29,7 @@ def data_files():
 	"""
 
 	return [
-		("opensesame_extensions/OpenScienceFramework",
+		("share/opensesame_extensions/OpenScienceFramework",
 			files("opensesame_extensions/OpenScienceFramework/*")),
 		]
 
