@@ -59,10 +59,10 @@ def hashfile(path, hasher, blocksize=65536):
 	hasher : hashlib.HASH
 		Hashing object, such as returned by hashlib.md5() or hashlib.sha256()
 	blocksize : int (default: 65536)
-		The buffersize to read the file with
+		The size of the buffer to allocate for reading in the file
 	
 	Returns:
-	str : the hasher.hexdigest() contents
+	UUID : the hasher.hexdigest() contents, which is a UUID object
 	"""
 	with open(os.path.abspath(path), 'rb') as afile:
 		buf = afile.read(blocksize)
@@ -159,10 +159,36 @@ class Notifier(QtCore.QObject):
 			always_show=True)
 
 class VersionChoiceDialog(QtWidgets.QDialog):
+	""" Custom dialog for showing the local and remote (OSF) version of an
+	experiment side by side if they are found to be different. The user can then
+	choose which version to use """
+
 	USE_LOCAL = 2
 	USE_REMOTE = 3
 
 	def __init__(self, *args, **kwargs):
+		""" Constructor
+
+		Parameters
+		----------
+		This object expects two dictionaries that describe the local and remote file.
+		They both should contain the following information:
+			
+			name - the name of the file
+			filesize - the size of the file
+			modified - the last modified date (preferably as an arrow object, or 
+						otherwise a format that is parsable by arrow.get())
+		
+		local_version_info : dict
+			The local file information.
+		remote_version_info : dict
+			The remote file information
+
+		Raises
+		------
+		TypeError : if either the local_file_info or remote_file_info parameters
+		are missing.
+		"""
 		try:
 			self.local_version_info = kwargs.pop('local_version_info')
 		except KeyError:
@@ -177,6 +203,7 @@ class VersionChoiceDialog(QtWidgets.QDialog):
 		self.__setup_ui()
 
 	def __setup_ui(self):
+		""" Creates the GUI elements """
 		self.setLayout(QtWidgets.QVBoxLayout())
 		# Message label
 		message_layout = QtWidgets.QHBoxLayout()
@@ -309,7 +336,7 @@ class OpenScienceFramework(base_extension):
 
 		Parameters
 		----------
-		data : str
+		osf_node : str or None
 			uri to data folder on OSF
 			None resets the displays and unlinks datanode
 		"""
@@ -418,6 +445,11 @@ class OpenScienceFramework(base_extension):
 			The data of the remote file. If function is a callback for a HTTP
 			request function, this parameter can be a QNetworkReply object, which
 			is converted to the corresponding dict
+
+		Raises
+		------
+		OSFInvalidResponse : if the supplied data or response does not have the
+			structure as specified by the OSF API.
 		"""
 		# If a QNetworkReply is passed, convert its data to a dict
 		if isinstance(data, QtNetwork.QNetworkReply):
@@ -549,7 +581,13 @@ class OpenScienceFramework(base_extension):
 			osf_data=data['data']
 		)
 
+	def show_help(self):
+		""" Opens the help of this extension """
+		self.tabwidget.open_markdown(self.ext_resource(u'osf-help.md'), 
+			title=_(u'Help for OSF extension'))
+
 	### OpenSesame events
+
 	def event_startup(self):
 		""" OpenSesame event on startup of the program. Initialize the extension"""
 		self.__initialize()
@@ -676,6 +714,7 @@ class OpenScienceFramework(base_extension):
 			data_files=data_files, node_id=node_id)
 
 	### Other internal events
+
 	def handle_login(self):
 		""" Event fired upon login to OSF """
 		if self.sync_check_required and self.experiment.var.has('osf_id'):
@@ -705,11 +744,18 @@ class OpenScienceFramework(base_extension):
 		# Init and set up user badge
 		icon_size = self.toolbar.iconSize()
 		self.user_badge = widgets.UserBadge(self.manager, icon_size)
+		# First action in menu
 		firstAction = self.user_badge.logged_in_menu.actions()[0]
+		# Add action to show OSF explorer in tab widget at first spot
 		show_explorer = QtWidgets.QAction(_(u"Show explorer"), 
 			self.user_badge.logged_in_menu)
 		show_explorer.triggered.connect(self.activate)
 		self.user_badge.logged_in_menu.insertAction(firstAction, show_explorer)
+		# Add action to show help page 
+		show_help = QtWidgets.QAction(_(u"Help"), 
+			self.user_badge.logged_in_menu)
+		show_help.triggered.connect(self.show_help)
+		self.user_badge.logged_in_menu.insertAction(firstAction, show_help)
 
 		# Set-up project tree
 		self.project_tree = widgets.ProjectTree(self.manager)
@@ -741,6 +787,9 @@ class OpenScienceFramework(base_extension):
 		# Add a widget to the project explorer with info about link to OSF states
 		self.__add_info_linked_widget(self.project_explorer)
 
+		# Add a help button to the title widget
+		self.__add_help_button(self.project_explorer)
+
 		# Override the trees contextMenuEvent (again) and handle it here
 		self.project_tree.contextMenuEvent = self.__show_tree_context_menu
 
@@ -748,7 +797,7 @@ class OpenScienceFramework(base_extension):
 		# a logged_in event and removes this file after logout
 		self.tfl = events.TokenFileListener(tokenfile)
 
-		# Add items as listeners to the event Notifier
+		# Add items as listeners to the Notifier sending login and logout events
 		self.manager.dispatcher.add_listeners(
 			[
 				self, self.manager, self.tfl, self.user_badge, 
@@ -778,32 +827,37 @@ class OpenScienceFramework(base_extension):
 		# If a valid stored token is found, read that in an dispatch login event
 		if self.manager.check_for_stored_token(self.manager.tokenfile):
 			self.manager.dispatcher.dispatch_login()
-			return
+		
+		# Monkey-patch main_windows closeEvent so that the login window also closes
+		# if OpenSesame is closed
+		self.mw_closeEvent = self.main_window.closeEvent
+		self.main_window.closeEvent = self.__closeEvent
 
-	def __show_tree_context_menu(self, e):
-		item = self.project_tree.itemAt(e.pos())
-		if item is None:
-			return
-
-		context_menu = self.project_explorer.create_context_menu(item)
-		if not context_menu is None:
-			context_menu = self.__inject_context_menu_items(item, context_menu)
-			context_menu.popup(e.globalPos())
+	def __closeEvent(self, event):
+		""" Monkey patch for main_window.closeEvent. It calls the closeEvent of
+		main_window, but then also makes sure the login window is closed. """
+		self.mw_closeEvent(event)
+		self.manager.browser.close()
 
 	def __inject_context_menu_items(self, item, context_menu):
+		""" This function lets the OSF explorer create the original context menu,
+		but then injects the extra items specific to OpenSesame, such as the linking
+		of experiments and data folders, and opening OpenSesame experiments directly
+		from the OSF. """
+
 		data = item.data(0,QtCore.Qt.UserRole)
 		kind = data["attributes"]["kind"]
 		
 		firstAction = context_menu.actions()[0]
 		if kind == 'folder':
 			# Sync experiment entry
-			sync_experiment = QtWidgets.QAction(QtGui.QIcon.fromTheme('insert-link'),
+			sync_experiment = QtWidgets.QAction(QtGui.QIcon.fromTheme('gcolor2'),
 				_(u"Sync experiment to this folder"), 
 				context_menu)
 			sync_experiment.triggered.connect(self.__link_experiment_to_osf)
 			context_menu.insertAction(firstAction, sync_experiment)
 			# Sync data entry
-			sync_data = QtWidgets.QAction(QtGui.QIcon.fromTheme('insert-link'),
+			sync_data = QtWidgets.QAction(QtGui.QIcon.fromTheme('mail-inbox'),
 				_(u"Sync data to this folder"), 
 				context_menu)
 			sync_data.triggered.connect(self.__link_data_to_osf)
@@ -878,6 +932,9 @@ class OpenScienceFramework(base_extension):
 		explorer.download_button.setText("")
 
 	def __add_info_linked_widget(self, explorer):
+		""" Adds the widget displaying the information about linked experiments
+		or data folders, including buttons to unlink them, at the top of the 
+		OSF explorer. """
 		# Create widget
 		self.info_widget = QtWidgets.QWidget()
 
@@ -951,12 +1008,23 @@ class OpenScienceFramework(base_extension):
 
 		# Make sure the self.info_widget is vertically as small as possible.
 		self.info_widget.setSizePolicy(QtWidgets.QSizePolicy.Minimum, 
-			QtWidgets.QSizePolicy.Fixed)
-		
+			QtWidgets.QSizePolicy.Fixed)	
 		explorer.main_layout.insertWidget(1, self.info_widget)
 
+	def __add_help_button(self, explorer):
+		explorer.title_widget.layout().addStretch(1)
+		help_button = QtWidgets.QPushButton("", explorer.title_widget)
+		help_button.setIcon(QtGui.QIcon.fromTheme('help-contents'))
+		help_button.clicked.connect(self.show_help)
+		help_button.setToolTip(_(u"Tell me more about the OSF extension"))
+		explorer.title_widget.layout().addWidget(help_button)
+
 	def __process_file_info(self, reply):
-		""" Callback for event_open_experiment """
+		""" Callback for event_open_experiment. Checks if an experiment is linked to
+		the OSF and displays this status accordingly in the OSF explorer tab.
+		Additionally, it does an extra check to see if the local and remote versions
+		of the recently opened experiment are still in sync and displays a choice dialog
+		if they are not. """
 		# Parse the response
 		data = json.loads(safe_decode(reply.readAll().data()))
 		# Check if structure is valid, and if so, parse experiment's osf path
@@ -978,7 +1046,9 @@ class OpenScienceFramework(base_extension):
 		self.compare_versions(data)
 
 	def __process_datafolder_info(self, reply):
-		""" Callback for event_open_experiment """
+		""" Callback for event_open_experiment. Checks if the recently opened 
+		experiment has a linked data folder on the OSF and displays this information
+		accordingly in the OSF explorer. """
 		if isinstance(reply, QtNetwork.QNetworkReply):
 			data = json.loads(safe_decode(reply.readAll().data()))
 			try:
@@ -1085,6 +1155,17 @@ class OpenScienceFramework(base_extension):
 			iterator += 1
 
 	### PyQt slots
+
+	def __show_tree_context_menu(self, e):
+		""" Shows the context menu of the tree """
+		item = self.project_tree.itemAt(e.pos())
+		if item is None:
+			return
+
+		context_menu = self.project_explorer.create_context_menu(item)
+		if not context_menu is None:
+			context_menu = self.__inject_context_menu_items(item, context_menu)
+			context_menu.popup(e.globalPos())
 
 	def __show_explorer_tab(self):
 		""" Shows the OSF tab in the main content section """
@@ -1212,7 +1293,8 @@ class OpenScienceFramework(base_extension):
 			)
 			
 	def __experiment_downloaded(self, reply, *args, **kwargs):
-		""" Callback for __open_osf_experiment() """
+		""" Callback for __open_osf_experiment(). Opens the experiment that justh
+		has been downloaded from the OSF. """
 		saved_exp_location = kwargs.get('destination')
 
 		# Open experiment in OpenSesame
@@ -1408,9 +1490,9 @@ class OpenScienceFramework(base_extension):
 	def __link_experiment_succeeded(self, *args, **kwargs):
 		""" Callback for __link_experiment_to_osf if it succeeded. This function
 		adds the new item to the tree, without refreshing it completely. For now,
-		it only works with items added to osfstorage as the data return by other
+		it only works with items added to osfstorage as the data returned by other
 		providers is very unpredicatble. These simply trigger a full refresh of
-		the tree and don't supply 'new_item_data' to this function. If this is the
+		the tree and don't supply 'new_item_data' to this function. In this
 		case, this function simply returns. """
 		
 		# Get the data returned by the OSF for the newly created item. This data
@@ -1552,6 +1634,7 @@ class OpenScienceFramework(base_extension):
 		self.experiment.var.unset('osf_always_upload_data')
 		
 	### Other common utility functions
+
 	def __notify_sync_complete(self, message, data_to_send):
 		""" Callback for __prepare_experiment_sync and __prepare_experiment_data_sync.
 		Simply notifies if the syncing operation completed successfully. """
@@ -1559,7 +1642,7 @@ class OpenScienceFramework(base_extension):
 
 	def __get_selected_node_for_link(self):
 		""" Checks if current selection is valid for linking operation, which
-		can only be done to folders (DRY). Returns the selected tree item containing
+		can only be done to folders. Returns the selected tree item containing
 		the node information. """
 		selected_item = self.project_tree.currentItem()
 
