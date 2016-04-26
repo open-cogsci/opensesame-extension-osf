@@ -1276,7 +1276,7 @@ class OpenScienceFramework(base_extension):
 		# See if a previous folder was set, and if not, try to set
 		# the user's home folder as a starting folder of the dialog
 		if not hasattr(self.project_explorer, 'last_dl_destination_folder'):
-			self.project_explorer.last_dl_destination_folder = os.path.expanduser("~")
+			self.project_explorer.last_dl_destination_folder = os.path.expanduser(safe_str("~"))
 
 		# Show dialog in which user chooses where to save the experiment locally
 		# If the experiment already exists, check if it is the same linked experiment.
