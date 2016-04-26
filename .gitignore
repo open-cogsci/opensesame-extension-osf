@@ -61,3 +61,5 @@ target/
 
 # Other project files
 token.json
+
+build_all

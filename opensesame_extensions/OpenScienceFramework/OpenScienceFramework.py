@@ -39,6 +39,22 @@ __license__ = u"Apache2"
 
 from QOpenScienceFramework import widgets, events, manager
 from QOpenScienceFramework import connection as osf
+
+# Set OS client ID
+# Real server
+test_server_settings = {
+ 	"client_id"		: "cbc4c47b711a4feab974223b255c81c1",
+	"redirect_uri"	: "https://www.getpostman.com/oauth2/callback",
+}
+# Test server
+server_settings = {
+	"client_id"		: "878e88b88bf74471a6a3ff05e007b0dd",
+	"redirect_uri"	: "https://www.getpostman.com/oauth2/callback",
+}
+# Add these settings to the general settings
+osf.settings.update(server_settings)
+osf.create_session()
+
 import os
 # For md5 and sha comparisons
 import hashlib
@@ -1188,6 +1204,11 @@ class OpenScienceFramework(base_extension):
 	def __item_double_clicked(self, item):
 		""" Handles doubleclick on treeWidgetItem """
 		data = item.data(0, QtCore.Qt.UserRole)
+		
+		# don't do anything for project nodes
+		if not "kind" in data["attributes"]:
+			return
+
 		kind = data["attributes"]["kind"]
 		
 		if kind == "file":
