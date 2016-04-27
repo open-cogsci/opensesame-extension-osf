@@ -31,6 +31,7 @@ from libqtopensesame.misc.translate import translation_context
 from libopensesame.py3compat import *
 import json
 import warnings
+import tempfile
 
 _ = translation_context(u'OpenScienceFramework', category=u'extension')
 
@@ -39,21 +40,6 @@ __license__ = u"Apache2"
 
 from QOpenScienceFramework import widgets, events, manager
 from QOpenScienceFramework import connection as osf
-
-# Set OS client ID
-# Real server
-test_server_settings = {
- 	"client_id"		: "cbc4c47b711a4feab974223b255c81c1",
-	"redirect_uri"	: "https://www.getpostman.com/oauth2/callback",
-}
-# Test server
-server_settings = {
-	"client_id"		: "878e88b88bf74471a6a3ff05e007b0dd",
-	"redirect_uri"	: "https://www.getpostman.com/oauth2/callback",
-}
-# Add these settings to the general settings
-osf.settings.update(server_settings)
-osf.create_session()
 
 import os
 # For md5 and sha comparisons
@@ -746,7 +732,20 @@ class OpenScienceFramework(base_extension):
 		
 	def __initialize(self):
 		""" Intialization of the extension """
-		tokenfile = os.path.abspath("token.json")
+		
+		# Set OSF client ID and redirect URL
+		server_settings = {
+			"client_id"		: "878e88b88bf74471a6a3ff05e007b0dd",
+			"redirect_uri"	: "https://www.getpostman.com/oauth2/callback",
+		}
+		# Add these settings to the general settings
+		osf.settings.update(server_settings)
+		# Create and OAuth session
+		osf.create_session()
+		# Store the token in the temp dir (it is only valid for an hour, so this
+		# doesn't seem to be a real security risk)
+		tmp_dir = safe_decode(tempfile.gettempdir())
+		tokenfile = os.path.join(tmp_dir, "OS_OSF.json")
 		
 		# Initialize notifier
 		self.notifier = Notifier(self.extension_manager)
