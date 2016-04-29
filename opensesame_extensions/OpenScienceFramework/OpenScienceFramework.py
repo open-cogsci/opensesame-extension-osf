@@ -29,27 +29,24 @@ from qtpy import QtWidgets, QtCore, QtGui, QtNetwork
 from libqtopensesame.extensions import base_extension
 from libqtopensesame.misc.translate import translation_context
 from libopensesame.py3compat import *
-import json
-import warnings
-import tempfile
-
-_ = translation_context(u'OpenScienceFramework', category=u'extension')
-
-__author__ = u"Daniel Schreij"
-__license__ = u"Apache2"
 
 from QOpenScienceFramework import widgets, events, manager
 from QOpenScienceFramework import connection as osf
 
 import os
-# For md5 and sha comparisons
+import sys
+import json
+import warnings
+import tempfile
 import hashlib
-# For easier python time handling
 import arrow
-# For human readable file sizes
 import humanize
-# File copying
 import shutil
+
+_ = translation_context(u'OpenScienceFramework', category=u'extension')
+
+__author__ = u"Daniel Schreij"
+__license__ = u"Apache2"
 
 def hashfile(path, hasher, blocksize=65536):
 	""" Creates a hash for the supplied file
@@ -1275,7 +1272,9 @@ class OpenScienceFramework(base_extension):
 		# See if a previous folder was set, and if not, try to set
 		# the user's home folder as a starting folder of the dialog
 		if not hasattr(self.project_explorer, 'last_dl_destination_folder'):
-			self.project_explorer.last_dl_destination_folder = os.path.expanduser(safe_str("~"))
+			self.project_explorer.last_dl_destination_folder = safe_decode(
+				os.path.expanduser(safe_str("~")),
+				enc=sys.getfilesystemencoding())
 
 		# Show dialog in which user chooses where to save the experiment locally
 		# If the experiment already exists, check if it is the same linked experiment.
