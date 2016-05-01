@@ -1513,38 +1513,39 @@ class OpenScienceFramework(base_extension):
 		providers is very unpredicatble. These simply trigger a full refresh of
 		the tree and don't supply 'new_item_data' to this function. In this
 		case, this function simply returns. """
-		
-		# Get the data returned by the OSF for the newly created item. This data
-		# is severely lacking compared to what it normally returns for info requests
+	
 		# The complete new tree_widget_item should also be available as the 
 		# 'new_item' kwarg	
-		# for any other provider than osfstorage, new_item_data is useless.
-		new_item_data = kwargs.get('new_item_data')
-		if new_item_data is None:
+		
+		new_item = kwargs.get('new_item', None)
+
+		if new_item is None:
 			return
+
+		new_item_data = new_item.data(0, QtCore.Qt.UserRole)
 
 		try:
 			# The data returne by OSF is really messy, but since we don't have access
 			# to the refreshed data yet, we'll have to make due with it.
 			# Parse OSF id from download url (it is the final component) 
 			self.experiment.var.osf_id = \
-				os.path.basename(new_item_data['data']['links']['download'])
+				os.path.basename(new_item_data['id'])
 		except KeyError as e:
 			self.notifier.error('Error',
 				_(u'Received data structure not as expected: {}'.format(e)))
 			return
+
 		# Generate the api url ourselves with the id we just determined
 		osf_path = osf.api_call('file_info', self.experiment.var.osf_id)
 		# Set the linked information
 		self.set_linked_experiment(osf_path)
 
-		new_item = kwargs.get('new_item')
 		# Mark the current item as linked, and unmark the old one if present
 		if isinstance(self.linked_experiment_treewidgetitem, 
-			QtWidgets.QTreeWidgetItem) and new_item:
+			QtWidgets.QTreeWidgetItem):
 			self.__unmark_treewidget_item(self.linked_experiment_treewidgetitem)
-			self.__mark_treewidget_item(new_item, _(u"Linked experiment"))
-			self.linked_experiment_treewidgetitem = new_item
+		self.__mark_treewidget_item(new_item, _(u"Linked experiment"))
+		self.linked_experiment_treewidgetitem = new_item
 
 		# Notify the user about the success
 		self.notifier.success(_(u'Experiment successfully linked'),
@@ -1625,8 +1626,8 @@ class OpenScienceFramework(base_extension):
 		if isinstance(self.linked_datanode_treewidgetitem, 
 			QtWidgets.QTreeWidgetItem) and selected_item:
 			self.__unmark_treewidget_item(self.linked_datanode_treewidgetitem)
-			self.__mark_treewidget_item(selected_item, _(u"Linked data folder"))
-			self.linked_datanode_treewidgetitem = selected_item
+		self.__mark_treewidget_item(selected_item, _(u"Linked data folder"))
+		self.linked_datanode_treewidgetitem = selected_item
 
 		# Notify the user about the success
 		self.notifier.success(_(u'Data folder successfully linked'),
