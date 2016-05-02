@@ -756,18 +756,6 @@ class OpenScienceFramework(base_extension):
 		# Init and set up user badge
 		icon_size = self.toolbar.iconSize()
 		self.user_badge = widgets.UserBadge(self.manager, icon_size)
-		# First action in menu
-		firstAction = self.user_badge.logged_in_menu.actions()[0]
-		# Add action to show OSF explorer in tab widget at first spot
-		show_explorer = QtWidgets.QAction(_(u"Show explorer"), 
-			self.user_badge.logged_in_menu)
-		show_explorer.triggered.connect(self.activate)
-		self.user_badge.logged_in_menu.insertAction(firstAction, show_explorer)
-		# Add action to show help page 
-		show_help = QtWidgets.QAction(_(u"Help"), 
-			self.user_badge.logged_in_menu)
-		show_help.triggered.connect(self.show_help)
-		self.user_badge.logged_in_menu.insertAction(firstAction, show_help)
 
 		# Set-up project tree
 		self.project_tree = widgets.ProjectTree(self.manager)
@@ -780,9 +768,7 @@ class OpenScienceFramework(base_extension):
 		# Add extra column for remarks
 		self.project_tree.setColumnCount(self.project_tree.columnCount()+1)
 		header = self.project_tree.headerItem()
-		header.setText(self.project_tree.columnCount()-1,_(u'Remarks'))
-
-		# Inject OpenSesame items into the OSF Explorers context menu
+		header.setText(self.project_tree.columnCount()-1,_(u'Comments'))
 
 		# Save osf_icon for later usage
 		self.osf_icon = self.project_tree.get_icon('folder', 'osfstorage')
@@ -792,6 +778,22 @@ class OpenScienceFramework(base_extension):
 		self.project_explorer = widgets.OSFExplorer(
 			self.manager, tree_widget=self.project_tree
 		)
+
+		# First action in menu
+		firstAction = self.user_badge.logged_in_menu.actions()[0]
+		# Add action to show OSF explorer in tab widget at first spot
+		show_explorer = QtWidgets.QAction(self.osf_icon, _(u"Show explorer"), 
+			self.user_badge.logged_in_menu)
+		show_explorer.triggered.connect(self.activate)
+		self.user_badge.logged_in_menu.insertAction(firstAction, show_explorer)
+		# Add a separator
+		self.user_badge.logged_in_menu.addSeparator()
+		# Add action to show help page
+		help_icon = QtGui.QIcon.fromTheme('help-contents')
+		show_help = QtWidgets.QAction(help_icon, _(u"Help"), 
+			self.user_badge.logged_in_menu)
+		show_help.triggered.connect(self.show_help)
+		self.user_badge.logged_in_menu.addAction(show_help)
 
 		# Set up the link and save to OSF buttons
 		self.__setup_buttons(self.project_explorer)
@@ -864,13 +866,13 @@ class OpenScienceFramework(base_extension):
 		if kind == 'folder':
 			# Sync experiment entry
 			sync_experiment = QtWidgets.QAction(QtGui.QIcon.fromTheme('gcolor2'),
-				_(u"Sync experiment to this folder"), 
+				_(u"Link experiment here"), 
 				context_menu)
 			sync_experiment.triggered.connect(self.__link_experiment_to_osf)
 			context_menu.insertAction(firstAction, sync_experiment)
 			# Sync data entry
-			sync_data = QtWidgets.QAction(QtGui.QIcon.fromTheme('mail-inbox'),
-				_(u"Sync data to this folder"), 
+			sync_data = QtWidgets.QAction(QtGui.QIcon.fromTheme('mail-outbox'),
+				_(u"Link as data folder"), 
 				context_menu)
 			sync_data.triggered.connect(self.__link_data_to_osf)
 			context_menu.insertAction(firstAction, sync_data)
@@ -898,7 +900,7 @@ class OpenScienceFramework(base_extension):
 
 		# Link data folder
 		self.button_link_data_to_osf = QtWidgets.QPushButton(_(u'Link data'))
-		self.button_link_data_to_osf.setIcon(QtGui.QIcon.fromTheme('mail-inbox'))
+		self.button_link_data_to_osf.setIcon(QtGui.QIcon.fromTheme('mail-outbox'))
 		self.button_link_data_to_osf.clicked.connect(self.__link_data_to_osf)
 		self.button_link_data_to_osf.setDisabled(True)
 		
@@ -952,7 +954,6 @@ class OpenScienceFramework(base_extension):
 
 		# Set up layout
 		info_layout = QtWidgets.QGridLayout()
-		#info_layout.setContentsMargins(15, 11, 15, 40)
 
 		# Set up labels
 		linked_experiment_label = QtWidgets.QLabel(_(u"Experiment linked to:"))
@@ -967,7 +968,7 @@ class OpenScienceFramework(base_extension):
 		# Widgets for automatically uploading experiment to OSF on save
 		self.widget_autosave_experiment =  QtWidgets.QWidget()
 		autosave_exp_layout = QtWidgets.QHBoxLayout()
-		autosave_exp_layout.setContentsMargins(0, 0, 0, 0)
+		
 		self.widget_autosave_experiment.setLayout(autosave_exp_layout)
 		autosave_exp_label = QtWidgets.QLabel(_(u"Always upload experiment on save"))
 		self.checkbox_autosave_experiment = QtWidgets.QCheckBox()
@@ -984,7 +985,6 @@ class OpenScienceFramework(base_extension):
 		# Widgets for the automatic uploading of experiment data to OSF
 		self.widget_autosave_data = QtWidgets.QWidget()
 		autosave_data_layout = QtWidgets.QHBoxLayout()
-		autosave_data_layout.setContentsMargins(0, 0, 0, 0)
 		self.widget_autosave_data.setLayout(autosave_data_layout)
 		self.checkbox_autosave_data = QtWidgets.QCheckBox()
 		self.checkbox_autosave_data.setToolTip(_(
@@ -1011,8 +1011,11 @@ class OpenScienceFramework(base_extension):
 		info_layout.addWidget(self.widget_autosave_data, 2, 4)
 		self.info_widget.setLayout(info_layout)
 
-		self.info_widget.setContentsMargins(0, 0, 0, 0)
-		self.info_widget.layout().setContentsMargins(0, 0, 0, 0)
+		# Set margins and spacing
+		autosave_exp_layout.setContentsMargins(0, 0, 0, 0)
+		autosave_data_layout.setContentsMargins(0, 0, 0, 0)
+		info_layout.setContentsMargins(0, 0, 0, 0)
+		info_layout.setVerticalSpacing(6)
 
 		# Make sure the column containing the linked location info takes up the
 		# most space
@@ -1133,6 +1136,14 @@ class OpenScienceFramework(base_extension):
 		font.setItalic(True)
 		item.setFont(columns-1,font)
 
+		# Make all parent items italic
+		parent = item.parent()
+		while isinstance(parent, QtWidgets.QTreeWidgetItem):
+			font = parent.font(0)
+			font.setItalic(True)
+			parent.setFont(0,font)
+			parent = parent.parent()
+
 	def __unmark_treewidget_item(self, item):
 		""" Removes marking of widget item as linked element """
 		# Make all but the last columns to bold
@@ -1146,6 +1157,14 @@ class OpenScienceFramework(base_extension):
 		font = item.font(columns-1)
 		font.setItalic(False)
 		item.setFont(columns-1,font)
+
+		# Reset parent item fonts
+		parent = item.parent()
+		while isinstance(parent, QtWidgets.QTreeWidgetItem):
+			font = parent.font(0)
+			font.setItalic(False)
+			parent.setFont(0,font)
+			parent = parent.parent()
 
 	def __mark_linked_nodes(self):
 		""" Callback for self.tree.refreshFinished. Marks all files that are
@@ -1233,6 +1252,9 @@ class OpenScienceFramework(base_extension):
 			warnings.warn('Invalid OSF response format: {}'.format(e))
 			return
 
+		if not self.main_window.current_path:
+			warnings.warn('Attempted to upload an unsaved experiment')
+			return
 		# Convert to QFile (to get size info later)
 		file_to_upload = QtCore.QFile(self.main_window.current_path)
 		# Add this parameters so OSF knows what we want
@@ -1245,12 +1267,26 @@ class OpenScienceFramework(base_extension):
 			"filesize": file_to_upload.size()
 		}
 		
+		# See if the file info can be updated without refreshing the tree
+		if isinstance(self.linked_experiment_treewidgetitem, QtWidgets.QTreeWidgetItem):
+			try:
+				refresh_node = self.linked_experiment_treewidgetitem.parent()
+				updateIndex = refresh_node.indexOfChild(
+					self.linked_experiment_treewidgetitem)
+			except RuntimeError as e:
+				warnings.warn('could not get refresh node: {}'.format(e))
+		else:
+			refresh_node = None
+			updateIndex = None
+
 		self.manager.upload_file(
 			upload_url,
 			file_to_upload,
 			progressDialog=progress_dialog_data,
 			finishedCallback=self.project_explorer._upload_finished,
 			afterUploadCallback=self.__notify_sync_complete,
+			selectedTreeItem=refresh_node,
+			updateIndex=updateIndex,
 			message=_(u"Experiment successfully synced to the Open Science Framework")
 		)
 
@@ -1395,9 +1431,13 @@ class OpenScienceFramework(base_extension):
 					item['attributes']['name'] == filename), None)
 				file_upload_url = file_on_osf['links']['upload']
 				upload_url = "{}?kind=file".format(file_upload_url)
+				# Search for index of node to be replaced in tree
+				update_index = self.project_tree.find_item(
+					self.linked_datanode_treewidgetitem, 0, filename)
 			else:
 				upload_url = "{}?kind=file&name={}".format(
 					upload_url, filename)
+				update_index = None
 
 			# Convert to QFile (to get size info later)
 			file_to_upload = QtCore.QFile(data_file)
@@ -1409,12 +1449,23 @@ class OpenScienceFramework(base_extension):
 				"filesize": file_to_upload.size()
 			}
 
+			# See if the file info can be updated without refreshing the tree
+			if isinstance(self.linked_datanode_treewidgetitem, QtWidgets.QTreeWidgetItem):
+				try:
+					refresh_node = self.linked_datanode_treewidgetitem
+				except RuntimeError as e:
+					warnings.warn('could not get refresh node: {}'.format(e))
+			else:
+				refresh_node = None
+
 			self.manager.upload_file(
 				upload_url,
 				file_to_upload,
 				progressDialog=progress_dialog_data,
 				finishedCallback=self.project_explorer._upload_finished,
 				afterUploadCallback=self.__notify_sync_complete,
+				selectedTreeItem=refresh_node,
+				updateIndex=update_index,
 				message=_(u"{} successfully synced to the Open Science "
 					"Framework".format(filename))
 			)
@@ -1487,7 +1538,6 @@ class OpenScienceFramework(base_extension):
 			# Get file specific update utrl
 			upload_url = old_item_data['links']['upload']
 			upload_url += '?kind=file'
-
 
 		# Create a progress dialog to show upload status for large experiments
 		# that take a while to transfer
@@ -1565,11 +1615,13 @@ class OpenScienceFramework(base_extension):
 		if isinstance(self.linked_experiment_treewidgetitem, 
 			QtWidgets.QTreeWidgetItem):
 			self.__unmark_treewidget_item(self.linked_experiment_treewidgetitem)
-			self.linked_experiment_treewidgetitem = None	
-
+			self.linked_experiment_treewidgetitem = None
+				
 		self.set_linked_experiment(None)
 		self.experiment.var.unset('osf_id')
 		self.experiment.var.unset('osf_always_upload_experiment')
+		# make sure parent nodes of marked items are still in italic
+		self.__mark_linked_nodes()
 
 	### (Un)linking of experiment data
 
@@ -1652,12 +1704,19 @@ class OpenScienceFramework(base_extension):
 		self.set_linked_experiment_datanode(None)
 		self.experiment.var.unset('osf_datanode_id')
 		self.experiment.var.unset('osf_always_upload_data')
+		# make sure parent nodes of marked items are still in italic
+		self.__mark_linked_nodes()
 		
 	### Other common utility functions
 
-	def __notify_sync_complete(self, message, data_to_send):
+	def __notify_sync_complete(self, message, *args, **kwargs):
 		""" Callback for __prepare_experiment_sync and __prepare_experiment_data_sync.
 		Simply notifies if the syncing operation completed successfully. """
+		# If experiment has been synced, set the newly returned item
+		new_item = kwargs.pop('new_item', None)
+		if new_item:
+			self.linked_experiment_treewidgetitem = new_item
+			self.__mark_linked_nodes()
 		self.notifier.success(_(u'Sync success'), message)
 
 	def __get_selected_node_for_link(self):

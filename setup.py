@@ -51,7 +51,6 @@ setup(
 		'Programming Language :: Python :: 3',
 	],
 	install_requires=[
-		'python-opensesame',
 		'python-qosf',
 	],
 	include_package_data=False,
