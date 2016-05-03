@@ -970,7 +970,7 @@ class OpenScienceFramework(base_extension):
 		autosave_exp_layout = QtWidgets.QHBoxLayout()
 		
 		self.widget_autosave_experiment.setLayout(autosave_exp_layout)
-		autosave_exp_label = QtWidgets.QLabel(_(u"Always upload experiment on save"))
+		autosave_exp_label = QtWidgets.QLabel(_(u"Upload without asking"))
 		self.checkbox_autosave_experiment = QtWidgets.QCheckBox()
 		self.checkbox_autosave_experiment.setToolTip(_(
 			u"If this box is checked OpenSesame will not ask for permission to\n"
@@ -993,7 +993,7 @@ class OpenScienceFramework(base_extension):
 			"has (successfully) finished."))
 		self.checkbox_autosave_data.stateChanged.connect(
 			self.__handle_check_autosave_data)
-		autosave_data_label = QtWidgets.QLabel(_(u"Always upload collected data"))
+		autosave_data_label = QtWidgets.QLabel(_(u"Upload without asking"))
 		autosave_data_layout.addWidget(self.checkbox_autosave_data)
 		autosave_data_layout.addWidget(autosave_data_label, QtCore.Qt.AlignLeft)
 		self.widget_autosave_data.setDisabled(True)
