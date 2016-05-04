@@ -42,11 +42,13 @@ import hashlib
 import arrow
 import humanize
 import shutil
+import requests
 
 _ = translation_context(u'OpenScienceFramework', category=u'extension')
 
 __author__ = u"Daniel Schreij"
 __license__ = u"Apache2"
+__osf_settings_url__ = u"http://cogsci.nl/dschreij/osfsettings.json"
 
 def hashfile(path, hasher, blocksize=65536):
 	""" Creates a hash for the supplied file
@@ -645,8 +647,8 @@ class OpenScienceFramework(base_extension):
 			if self.experiment.var.has('osf_datanode_id'):
 				# Ids for root level locations (i.e. the root of repository) differ
 				# from those of subfolder locations. Both require a different API call
-				# to get the same find of information, so construct those accordingly
-				# A root level location will contain a colon
+				# to get the same kind of information, so construct those accordingly
+				# A root level location will contain a colon.
 				if not ":" in self.experiment.var.osf_datanode_id:
 					self.manager.get_file_info(self.experiment.osf_datanode_id,
 						self.__process_datafolder_info)
@@ -729,12 +731,23 @@ class OpenScienceFramework(base_extension):
 		
 	def __initialize(self):
 		""" Intialization of the extension """
-		
-		# Set OSF client ID and redirect URL
-		server_settings = {
-			"client_id"		: "878e88b88bf74471a6a3ff05e007b0dd",
-			"redirect_uri"	: "https://www.getpostman.com/oauth2/callback",
-		}
+		# Try to get latest osf server settings from cogsci.nl. If this fails, use
+		# cached settings.
+		try:
+			resp = requests.get(__osf_settings_url__)
+			if resp.status_code == requests.codes.ok:
+				server_settings = resp.json()
+			else:
+				raise ConnectionError("HTTP code {}".format(resp.status_code))
+		except (ConnectionError, json.JSONDecodeError) as e:
+			warnings.warn("Could not connect to cogsci.nl to get OSF settings:"
+				" {}".format(e))
+			warnings.warn("Using cached OSF settings instead")
+			# Set OSF client ID and redirect URL
+			server_settings = {
+				"client_id"		: "878e88b88bf74471a6a3ff05e007b0dd",
+				"redirect_uri"	: "https://www.getpostman.com/oauth2/callback",
+			}
 		# Add these settings to the general settings
 		osf.settings.update(server_settings)
 		# Create and OAuth session
@@ -768,7 +781,7 @@ class OpenScienceFramework(base_extension):
 		# Add extra column for remarks
 		self.project_tree.setColumnCount(self.project_tree.columnCount()+1)
 		header = self.project_tree.headerItem()
-		header.setText(self.project_tree.columnCount()-1,_(u'Comments'))
+		header.setText(self.project_tree.columnCount()-1, _(u'Comments'))
 
 		# Save osf_icon for later usage
 		self.osf_icon = self.project_tree.get_icon('folder', 'osfstorage')
@@ -905,14 +918,15 @@ class OpenScienceFramework(base_extension):
 		self.button_link_data_to_osf.setDisabled(True)
 		
 		## Unlink buttons
+		unlink_icon = QtGui.QIcon.fromTheme('node-delete')
 
 		# Unlink experiment button
-		self.button_unlink_experiment = QtWidgets.QPushButton(_(u'Unlink'))
+		self.button_unlink_experiment = QtWidgets.QPushButton(unlink_icon, _(u'Unlink'))
 		self.button_unlink_experiment.clicked.connect(self.__unlink_experiment)
 		self.button_unlink_experiment.setDisabled(True)
 
 		# Unlink data button
-		self.button_unlink_data = QtWidgets.QPushButton(_(u'Unlink'))
+		self.button_unlink_data = QtWidgets.QPushButton(unlink_icon, _(u'Unlink'))
 		self.button_unlink_data.clicked.connect(self.__unlink_data)
 		self.button_unlink_data.setDisabled(True)
 
@@ -1338,12 +1352,20 @@ class OpenScienceFramework(base_extension):
 			else:
 				progress_dialog_data = None
 			
+			self.openingDialog = QtWidgets.QMessageBox(self.main_window)
+			self.openingDialog.setText(_(u"Opening experiment. Please wait"))
+			self.openingDialog.setStandardButtons(QtWidgets.QMessageBox.Cancel)
+			self.openingDialog.show()
+			self.openingDialog.raise_()
+
 			# Download the file
 			self.manager.download_file(
 				download_url,
 				destination,
 				progressDialog=progress_dialog_data,
 				finishedCallback=self.__experiment_downloaded,
+				errorCallback=self.__experiment_open_failed,
+				abortSignal=self.openingDialog.buttonClicked,
 				osf_data=data
 			)
 			
@@ -1351,6 +1373,7 @@ class OpenScienceFramework(base_extension):
 		""" Callback for __open_osf_experiment(). Opens the experiment that justh
 		has been downloaded from the OSF. """
 		saved_exp_location = kwargs.get('destination')
+		self.openingDialog.close()
 
 		# Open experiment in OpenSesame
 		self.main_window.open_file(path=saved_exp_location, add_to_recent=True)
@@ -1366,6 +1389,13 @@ class OpenScienceFramework(base_extension):
 			# And save it
 			self.main_window.save_file()
 			self.set_linked_experiment(kwargs['osf_data']['links']['self'])
+
+	def __experiment_open_failed(self, reply, *args, **kwargs):
+		""" Makes sure the main window is enabled again if opening of experiment
+		fails. """
+		if isinstance(self.openingDialog, QtWidgets.QDialog):
+			print("Error but done")
+			self.openingDialog.close()
 
 	### Actions for experiment data
 	
