@@ -1352,13 +1352,16 @@ class OpenScienceFramework(base_extension):
 			else:
 				progress_dialog_data = None
 			
-			self.openingDialog = QtWidgets.QMessageBox()
-			self.openingDialog.setModal(False)
-			self.openingDialog.setText(_(u"Opening experiment. Please wait"))
-			self.openingDialog.setStandardButtons(QtWidgets.QMessageBox.Cancel)
+			self.openingDialog = QtWidgets.QMessageBox(
+				QtWidgets.QMessageBox.Information,
+				_(u"Opening"),
+				_(u"Opening experiment. Please wait"),
+				QtWidgets.QMessageBox.Cancel,
+				self.main_window
+			)
+			self.openingDialog.setWindowModality(QtCore.Qt.WindowModal)
 			self.openingDialog.show()
 			self.openingDialog.raise_()
-			self.main_window.setEnabled(False)
 
 			# Download the file
 			self.manager.download_file(
@@ -1375,8 +1378,8 @@ class OpenScienceFramework(base_extension):
 		""" Callback for __open_osf_experiment(). Opens the experiment that justh
 		has been downloaded from the OSF. """
 		saved_exp_location = kwargs.get('destination')
-		self.openingDialog.close()
-		self.main_window.setEnabled(True)
+		self.openingDialog.hide()
+		self.openingDialog.deleteLater()
 
 		# Open experiment in OpenSesame
 		self.main_window.open_file(path=saved_exp_location, add_to_recent=True)
@@ -1396,8 +1399,8 @@ class OpenScienceFramework(base_extension):
 	def __experiment_open_failed(self, reply, *args, **kwargs):
 		""" Makes sure the main window is enabled again if opening of experiment
 		fails. """
-		self.openingDialog.close()
-		self.main_window.setEnabled(False)
+		self.openingDialog.hide()
+		self.openingDialog.deleteLater()
 
 	### Actions for experiment data
 	
