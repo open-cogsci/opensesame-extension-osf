@@ -458,7 +458,7 @@ class OpenScienceFramework(base_extension):
 
 		# Check validity of the currently opened file
 		local_file = self.main_window.current_path
-		if local_file and not os.path.isfile(local_file):
+		if local_file and not os.path.isfile(local_file) or local_file is None:
 			warnings.warn('No valid file specified')
 			return
 		
@@ -586,6 +586,52 @@ class OpenScienceFramework(base_extension):
 		""" Opens the help of this extension """
 		self.tabwidget.open_markdown(self.ext_resource(u'osf-help.md'), 
 			title=_(u'Help for OSF extension'))
+
+	def mark_treewidget_item(self, item, remark_text):
+		""" Makes all columns of the tree item bold and puts remarkt_text in the
+		remark column. Used to show which treewidget items represent a linked
+		experiment or data folder. """
+		# Make all but the last columns to bold
+		columns = self.project_tree.columnCount()
+		font = item.font(0)
+		font.setBold(True)
+		for i in range(columns-2):
+			item.setFont(i,font)
+		# Last column contains remark_text. Make it italic
+		item.setText(columns-1, remark_text)
+		font = item.font(columns-1)
+		font.setItalic(True)
+		item.setFont(columns-1,font)
+
+		# Make all parent items italic
+		parent = item.parent()
+		while isinstance(parent, QtWidgets.QTreeWidgetItem):
+			font = parent.font(0)
+			font.setItalic(True)
+			parent.setFont(0,font)
+			parent = parent.parent()
+
+	def unmark_treewidget_item(self, item):
+		""" Removes marking of widget item as linked element """
+		# Make all but the last columns to bold
+		columns = self.project_tree.columnCount()
+		font = item.font(0)
+		font.setBold(False)
+		for i in range(columns-2):
+			item.setFont(i,font)
+		# Last column contains remark_text. Make it italic
+		item.setText(columns-1, '')
+		font = item.font(columns-1)
+		font.setItalic(False)
+		item.setFont(columns-1,font)
+
+		# Reset parent item fonts
+		parent = item.parent()
+		while isinstance(parent, QtWidgets.QTreeWidgetItem):
+			font = parent.font(0)
+			font.setItalic(False)
+			parent.setFont(0,font)
+			parent = parent.parent()
 
 	### OpenSesame events
 
@@ -1134,52 +1180,6 @@ class OpenScienceFramework(base_extension):
 		else:
 			self.button_open_from_osf.setDisabled(True)
 
-	def __mark_treewidget_item(self, item, remark_text):
-		""" Makes all columns of the tree item bold and puts remarkt_text in the
-		remark column. Used to show which treewidget items represent a linked
-		experiment or data folder. """
-		# Make all but the last columns to bold
-		columns = self.project_tree.columnCount()
-		font = item.font(0)
-		font.setBold(True)
-		for i in range(columns-2):
-			item.setFont(i,font)
-		# Last column contains remark_text. Make it italic
-		item.setText(columns-1, remark_text)
-		font = item.font(columns-1)
-		font.setItalic(True)
-		item.setFont(columns-1,font)
-
-		# Make all parent items italic
-		parent = item.parent()
-		while isinstance(parent, QtWidgets.QTreeWidgetItem):
-			font = parent.font(0)
-			font.setItalic(True)
-			parent.setFont(0,font)
-			parent = parent.parent()
-
-	def __unmark_treewidget_item(self, item):
-		""" Removes marking of widget item as linked element """
-		# Make all but the last columns to bold
-		columns = self.project_tree.columnCount()
-		font = item.font(0)
-		font.setBold(False)
-		for i in range(columns-2):
-			item.setFont(i,font)
-		# Last column contains remark_text. Make it italic
-		item.setText(columns-1, '')
-		font = item.font(columns-1)
-		font.setItalic(False)
-		item.setFont(columns-1,font)
-
-		# Reset parent item fonts
-		parent = item.parent()
-		while isinstance(parent, QtWidgets.QTreeWidgetItem):
-			font = parent.font(0)
-			font.setItalic(False)
-			parent.setFont(0,font)
-			parent = parent.parent()
-
 	def __mark_linked_nodes(self):
 		""" Callback for self.tree.refreshFinished. Marks all files that are
 		connected to the OSF in the tree. """
@@ -1191,11 +1191,11 @@ class OpenScienceFramework(base_extension):
 			# Mark linked experiment
 			if self.experiment.var.has('osf_id'):
 				if item_data['id'] == self.experiment.var.osf_id:
-					self.__mark_treewidget_item(item, _(u"Linked experiment"))
+					self.mark_treewidget_item(item, _(u"Linked experiment"))
 					self.linked_experiment_treewidgetitem = item
 			if self.experiment.var.has('osf_datanode_id'):
 				if item_data['id'] == self.experiment.var.osf_datanode_id:
-					self.__mark_treewidget_item(item, _(u"Linked data folder"))
+					self.mark_treewidget_item(item, _(u"Linked data folder"))
 					self.linked_datanode_treewidgetitem = item
 			iterator += 1
 
@@ -1341,7 +1341,7 @@ class OpenScienceFramework(base_extension):
 
 		if destination:
 			# Remember this folder for later when this dialog has to be presented again
-			self.last_dl_destination_folder = os.path.dirname(destination)
+			self.project_explorer.last_dl_destination_folder = os.path.dirname(destination)
 			# Some file providers do not report the size. Check for that here
 			# Configure progress dialog (only if filesize is known)
 			if data['attributes']['size']:
@@ -1356,9 +1356,10 @@ class OpenScienceFramework(base_extension):
 				QtWidgets.QMessageBox.Information,
 				_(u"Opening"),
 				_(u"Opening experiment. Please wait"),
-				QtWidgets.QMessageBox.Cancel,
+				QtWidgets.QMessageBox.NoButton,
 				self.main_window
 			)
+			self.openingDialog.addButton(_(u"Cancel"), QtWidgets.QMessageBox.RejectRole)
 			self.openingDialog.setWindowModality(QtCore.Qt.WindowModal)
 			self.openingDialog.show()
 			self.openingDialog.raise_()
@@ -1628,8 +1629,8 @@ class OpenScienceFramework(base_extension):
 		# Mark the current item as linked, and unmark the old one if present
 		if isinstance(self.linked_experiment_treewidgetitem, 
 			QtWidgets.QTreeWidgetItem):
-			self.__unmark_treewidget_item(self.linked_experiment_treewidgetitem)
-		self.__mark_treewidget_item(new_item, _(u"Linked experiment"))
+			self.unmark_treewidget_item(self.linked_experiment_treewidgetitem)
+		self.mark_treewidget_item(new_item, _(u"Linked experiment"))
 		self.linked_experiment_treewidgetitem = new_item
 
 		# Notify the user about the success
@@ -1649,7 +1650,7 @@ class OpenScienceFramework(base_extension):
 
 		if isinstance(self.linked_experiment_treewidgetitem, 
 			QtWidgets.QTreeWidgetItem):
-			self.__unmark_treewidget_item(self.linked_experiment_treewidgetitem)
+			self.unmark_treewidget_item(self.linked_experiment_treewidgetitem)
 			self.linked_experiment_treewidgetitem = None
 				
 		self.set_linked_experiment(None)
@@ -1712,8 +1713,8 @@ class OpenScienceFramework(base_extension):
 		# Mark the current item as linked, and unmark the previous one if present
 		if isinstance(self.linked_datanode_treewidgetitem, 
 			QtWidgets.QTreeWidgetItem) and selected_item:
-			self.__unmark_treewidget_item(self.linked_datanode_treewidgetitem)
-		self.__mark_treewidget_item(selected_item, _(u"Linked data folder"))
+			self.unmark_treewidget_item(self.linked_datanode_treewidgetitem)
+		self.mark_treewidget_item(selected_item, _(u"Linked data folder"))
 		self.linked_datanode_treewidgetitem = selected_item
 
 		# Notify the user about the success
@@ -1733,7 +1734,7 @@ class OpenScienceFramework(base_extension):
 
 		if isinstance(self.linked_datanode_treewidgetitem, 
 			QtWidgets.QTreeWidgetItem):
-			self.__unmark_treewidget_item(self.linked_datanode_treewidgetitem)
+			self.unmark_treewidget_item(self.linked_datanode_treewidgetitem)
 			self.linked_datanode_treewidgetitem = None
 
 		self.set_linked_experiment_datanode(None)
