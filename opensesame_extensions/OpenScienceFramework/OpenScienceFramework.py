@@ -32,6 +32,7 @@ from libopensesame.py3compat import *
 
 from QOpenScienceFramework import widgets, events, manager
 from QOpenScienceFramework import connection as osf
+from QOpenScienceFramework.util import check_if_opensesame_file
 
 import os
 import sys
@@ -938,7 +939,7 @@ class OpenScienceFramework(base_extension):
 			context_menu.insertSeparator(firstAction)
 		elif kind == "file":
 			name = data["attributes"]["name"]
-			if widgets.check_if_opensesame_file(name, True):
+			if check_if_opensesame_file(name, True):
 				open_experiment = QtWidgets.QAction(QtGui.QIcon.fromTheme('document-open'),
 					_(u"Open experiment"), context_menu)
 				open_experiment.triggered.connect(self.__open_osf_experiment)
@@ -1175,7 +1176,7 @@ class OpenScienceFramework(base_extension):
 
 		# The open button should only be present when 
 		# an OpenSesame file is selected.
-		if widgets.check_if_opensesame_file(name, os3_only=True):
+		if check_if_opensesame_file(name, os3_only=True):
 			self.button_open_from_osf.setDisabled(False)
 		else:
 			self.button_open_from_osf.setDisabled(True)
@@ -1243,7 +1244,7 @@ class OpenScienceFramework(base_extension):
 		if kind == "file":
 			name = data["attributes"]["name"]
 			# Open if OpenSesame experiment
-			if widgets.check_if_opensesame_file(name, True):
+			if check_if_opensesame_file(name, True):
 				self.__open_osf_experiment()
 			# Download if other type of file
 			else:
@@ -1316,7 +1317,7 @@ class OpenScienceFramework(base_extension):
 		filename = data['attributes']['name']
 
 		# If the selected item is not an OpenSesame file, stop.
-		if not widgets.check_if_opensesame_file(filename, os3_only=True):
+		if not check_if_opensesame_file(filename, os3_only=True):
 			return
 
 		# See if a previous folder was set, and if not, try to set
