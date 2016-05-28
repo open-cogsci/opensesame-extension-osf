@@ -30,9 +30,8 @@ from libqtopensesame.extensions import base_extension
 from libqtopensesame.misc.translate import translation_context
 from libopensesame.py3compat import *
 
-from QOpenScienceFramework import widgets, events, manager
+from QOpenScienceFramework import widgets, events, manager, util
 from QOpenScienceFramework import connection as osf
-from QOpenScienceFramework.util import check_if_opensesame_file
 
 import os
 import sys
@@ -53,7 +52,7 @@ __osf_settings_url__ = u"http://cogsci.nl/dschreij/osfsettings.json"
 
 def hashfile(path, hasher, blocksize=65536):
 	""" Creates a hash for the supplied file
-	
+
 	Parameters
 	----------
 	path : str
@@ -62,7 +61,7 @@ def hashfile(path, hasher, blocksize=65536):
 		Hashing object, such as returned by hashlib.md5() or hashlib.sha256()
 	blocksize : int (default: 65536)
 		The size of the buffer to allocate for reading in the file
-	
+
 	Returns:
 	UUID : the hasher.hexdigest() contents, which is a UUID object
 	"""
@@ -78,8 +77,8 @@ class Notifier(QtCore.QObject):
 	it is not available """
 
 	def __init__(self, extension_manager):
-		""" Constructor 
-		
+		""" Constructor
+
 		Parameters
 		----------
 		extension_manager : OpenSesame exension manager
@@ -175,12 +174,12 @@ class VersionChoiceDialog(QtWidgets.QDialog):
 		----------
 		This object expects two dictionaries that describe the local and remote file.
 		They both should contain the following information:
-			
+
 			name - the name of the file
 			filesize - the size of the file
-			modified - the last modified date (preferably as an arrow object, or 
+			modified - the last modified date (preferably as an arrow object, or
 						otherwise a format that is parsable by arrow.get())
-		
+
 		local_version_info : dict
 			The local file information.
 		remote_version_info : dict
@@ -248,19 +247,19 @@ class VersionChoiceDialog(QtWidgets.QDialog):
 		# Add some stats about the file
 		local_form_layout.addRow(local_title_label)
 		local_form_layout.addRow(os_local_img)
-		local_form_layout.addRow(_(u"Name:"), 
+		local_form_layout.addRow(_(u"Name:"),
 			QtWidgets.QLabel(self.local_version_info['name'])),
-		
+
 		# If filesize is given as int, humanize it to comprehensible notations
 		if type(self.local_version_info['filesize']) in [int]: #, long]: (no longer exists?)
 			self.local_version_info['filesize'] = humanize.naturalsize(
 				self.local_version_info['filesize'])
-		local_form_layout.addRow(_(u"Size:"), 
+		local_form_layout.addRow(_(u"Size:"),
 			QtWidgets.QLabel(self.local_version_info['filesize']))
 		# Convert to arrow object for easier date/time handling (does nothing
 		# if already an arrow object)
 		local_last_modified = arrow.get(self.local_version_info['modified'])
-		local_form_layout.addRow(_(u"Last modified:"), 
+		local_form_layout.addRow(_(u"Last modified:"),
 			QtWidgets.QLabel("{} ({})".format(
 				local_last_modified.format('YYYY-MM-DD HH:mm'),
 				local_last_modified.humanize()
@@ -273,20 +272,20 @@ class VersionChoiceDialog(QtWidgets.QDialog):
 		remote_title_label.setAlignment(QtCore.Qt.AlignCenter)
 		remote_form_layout.addRow(remote_title_label)
 		remote_form_layout.addRow(os_remote_img)
-		remote_form_layout.addRow(_(u"Name:"), 
+		remote_form_layout.addRow(_(u"Name:"),
 			QtWidgets.QLabel(self.remote_version_info['name']))
-		
+
 		# If filesize is given as int, humanize it to comprehensible notations
 		if type(self.remote_version_info['filesize']) in [int]: # , long]:
 			self.remote_version_info['filesize'] = humanize.naturalsize(
 				self.remote_version_info['filesize'])
-		remote_form_layout.addRow(_(u"Size:"), 
+		remote_form_layout.addRow(_(u"Size:"),
 			QtWidgets.QLabel(self.remote_version_info['filesize']))
-		
+
 		# Convert to arrow object for easier date/time handling (does nothing
 		# if already an arrow object)
 		remote_last_modified = arrow.get(self.remote_version_info['modified'])
-		remote_form_layout.addRow(_(u"Last modified:"), 
+		remote_form_layout.addRow(_(u"Last modified:"),
 			QtWidgets.QLabel("{} ({})".format(
 				remote_last_modified.format('YYYY-MM-DD HH:mm'),
 				remote_last_modified.humanize()
@@ -319,7 +318,7 @@ class OpenScienceFramework(base_extension):
 		Parameters
 		----------
 		osf_node : str or None
-			uri to location of experiment on OSF. 
+			uri to location of experiment on OSF.
 			None resets the displays and unlinks experiment
 		"""
 		if osf_node is None:
@@ -354,7 +353,7 @@ class OpenScienceFramework(base_extension):
 
 	def verify_linked_experiment_status(self):
 		""" Check if linked node of the experiment is still valid, and if the always
-		upload checkbox should be checked or not, depending on the value of the 
+		upload checkbox should be checked or not, depending on the value of the
 		variable that tracks this in the variable registry """
 
 		if self.experiment.var.has('osf_id') and self.experiment.var.osf_id:
@@ -374,7 +373,7 @@ class OpenScienceFramework(base_extension):
 			# error on its own, so just simply pass a lambda function for the
 			# callback (we don't need to do anything with that data.)
 			self.manager.get(
-				osf_url, 
+				osf_url,
 				lambda x: None
 			)
 		else:
@@ -383,8 +382,8 @@ class OpenScienceFramework(base_extension):
 			self.set_linked_experiment(None)
 
 	def verify_linked_experiment_data_status(self):
-		""" Check if linked node for data upload is still valid, and if the always 
-		upload checkbox should be checked or not, depending on the value of the 
+		""" Check if linked node for data upload is still valid, and if the always
+		upload checkbox should be checked or not, depending on the value of the
 		variable that tracks this in the variable registry """
 
 		if self.experiment.var.has('osf_datanode_id') and \
@@ -406,7 +405,7 @@ class OpenScienceFramework(base_extension):
 			# error on its own, so just simply pass a lambda function for the
 			# callback (we don't need to do anything with that data.)
 			self.manager.get(
-				osf_url, 
+				osf_url,
 				lambda x: None
 			)
 		else:
@@ -416,11 +415,11 @@ class OpenScienceFramework(base_extension):
 		""" Determine the correct url for a folder node. These differ somewhat
 		for a top-level repository url (i.e. the root of the repository) or a
 		subfolder of a repository
-	
+
 		Parameters
 		----------
 		node_id : str
-			The id of the node. Either is a base64 string for a file or a subfolder 
+			The id of the node. Either is a base64 string for a file or a subfolder
 			in a repository, or a <project_id:repo_name> pair for a top-level (root)
 			repository node
 
@@ -440,7 +439,7 @@ class OpenScienceFramework(base_extension):
 	def compare_versions(self, data):
 		""" Check if currently opened experiment and the one linked on the OSF are
 		still in sync. Offer use the choice which file to use.
-			
+
 		Parameters
 		----------
 		data : dict or QtNetwork.QNetworkReply
@@ -462,7 +461,7 @@ class OpenScienceFramework(base_extension):
 		if local_file and not os.path.isfile(local_file) or local_file is None:
 			warnings.warn('No valid file specified')
 			return
-		
+
 		# Get remote sha256 hash from OSF
 		try:
 			remote_hash = data['data']['attributes']['extra']['hashes']['sha256']
@@ -482,10 +481,10 @@ class OpenScienceFramework(base_extension):
 			self.notifier.info(_(u"In sync"), _(u"Experiment is synchronized with "
 				"the Open Science Framework"))
 			return
-			
+
 		# If not, do some extra digging and provide the user with a choice of which
 		# version to keep
-		
+
 		# Get remote file information
 		try:
 			remote_name = data['data']['attributes']['name']
@@ -504,7 +503,7 @@ class OpenScienceFramework(base_extension):
 		local_size = os.path.getsize(local_file)
 		# last modified time
 		local_modified = arrow.get(os.path.getmtime(local_file)).to('local')
-		
+
 		local_info = {
 			'name': local_name,
 			'modified': local_modified,
@@ -528,12 +527,12 @@ class OpenScienceFramework(base_extension):
 		choice = 0
 		while not choice:
 			choice = choice_dialog.exec_()
-		
+
 		# If use closes dialog with close button, 0 will be returned...
 		if choice == choice_dialog.USE_LOCAL:
 			# If local version should be used, then we're done here
 			return
-		
+
 		# A weird loop, but the user should not be allowed to choose Yes to the
 		# the backup question and not save the file (by pressing cancel for instance)
 		while True:
@@ -573,7 +572,7 @@ class OpenScienceFramework(base_extension):
 			}
 		else:
 			progress_dialog_data = None
-		
+
 		# Download the file to open it later
 		self.manager.download_file(
 			data['data']['links']['download'],
@@ -585,7 +584,7 @@ class OpenScienceFramework(base_extension):
 
 	def show_help(self):
 		""" Opens the help of this extension """
-		self.tabwidget.open_markdown(self.ext_resource(u'osf-help.md'), 
+		self.tabwidget.open_markdown(self.ext_resource(u'osf-help.md'),
 			title=_(u'Help for OSF extension'))
 
 	def mark_treewidget_item(self, item, remark_text):
@@ -639,16 +638,16 @@ class OpenScienceFramework(base_extension):
 	def event_startup(self):
 		""" OpenSesame event on startup of the program. Initialize the extension"""
 		self.__initialize()
-	
+
 	def activate(self):
-		""" Show OSF Explorer. Also check if linked data is still legit. 
-		Users have access to it through the variable registry object, so it is 
+		""" Show OSF Explorer. Also check if linked data is still legit.
+		Users have access to it through the variable registry object, so it is
 		possible they have unknowingly tampered with it. """
 
 		self.verify_linked_experiment_status()
 		self.verify_linked_experiment_data_status()
-		self.__show_explorer_tab()	
-	
+		self.__show_explorer_tab()
+
 	def event_save_experiment(self, path):
 		""" See if experiment needs to be synced to OSF and do so if necessary"""
 		# First check if OSF id has been set
@@ -680,7 +679,7 @@ class OpenScienceFramework(base_extension):
 		accordingly """
 		# Only take action if user is logged in
 		if self.manager.logged_in_user:
-			# Check if exp is linked to OSF. 
+			# Check if exp is linked to OSF.
 			# If so, display this information in the OSF explorer.
 			if self.experiment.var.has('osf_id'):
 				self.manager.get_file_info(self.experiment.osf_id,
@@ -701,7 +700,7 @@ class OpenScienceFramework(base_extension):
 						self.__process_datafolder_info)
 				else:
 					project_id, repo = self.experiment.var.osf_datanode_id.split(':')
-					# For the OSF 
+					# For the OSF
 					api_call = osf.api_call('repo_files', project_id, repo)
 					self.__process_datafolder_info(api_call)
 			else:
@@ -723,12 +722,12 @@ class OpenScienceFramework(base_extension):
 	def event_process_data_files(self, data_files):
 		""" See if datafiles need to be saved to OSF """
 		# Check if data link has been set, and if a user is logged in.
-		
+
 		if not self.experiment.var.has('osf_datanode_id') or \
 			not self.experiment.var.osf_datanode_id or \
 			not self.manager.logged_in_user:
 			return
-	
+
 		# Do not upload the quickrun.csv resulting from a test run
 		if len(data_files) == 1 and os.path.basename(data_files[0]) == "quickrun.csv":
 			return
@@ -775,7 +774,7 @@ class OpenScienceFramework(base_extension):
 		self.info_widget.setEnabled(False)
 
 	### Private functions
-		
+
 	def __initialize(self):
 		""" Intialization of the extension """
 		# Try to get latest osf server settings from cogsci.nl. If this fails, use
@@ -803,14 +802,14 @@ class OpenScienceFramework(base_extension):
 		# doesn't seem to be a real security risk)
 		tmp_dir = safe_decode(tempfile.gettempdir())
 		tokenfile = os.path.join(tmp_dir, "OS_OSF.json")
-		
+
 		# Initialize notifier
 		self.notifier = Notifier(self.extension_manager)
 
 		# Create manager object
 		self.manager = manager.ConnectionManager(
 			self.main_window,
-			tokenfile=tokenfile, 
+			tokenfile=tokenfile,
 			notifier=self.notifier)
 
 		# Init and set up user badge
@@ -842,7 +841,7 @@ class OpenScienceFramework(base_extension):
 		# First action in menu
 		firstAction = self.user_badge.logged_in_menu.actions()[0]
 		# Add action to show OSF explorer in tab widget at first spot
-		show_explorer = QtWidgets.QAction(self.osf_icon, _(u"Show explorer"), 
+		show_explorer = QtWidgets.QAction(self.osf_icon, _(u"Show explorer"),
 			self.user_badge.logged_in_menu)
 		show_explorer.triggered.connect(self.activate)
 		self.user_badge.logged_in_menu.insertAction(firstAction, show_explorer)
@@ -850,7 +849,7 @@ class OpenScienceFramework(base_extension):
 		self.user_badge.logged_in_menu.addSeparator()
 		# Add action to show help page
 		help_icon = QtGui.QIcon.fromTheme('help-contents')
-		show_help = QtWidgets.QAction(help_icon, _(u"Help"), 
+		show_help = QtWidgets.QAction(help_icon, _(u"Help"),
 			self.user_badge.logged_in_menu)
 		show_help.triggered.connect(self.show_help)
 		self.user_badge.logged_in_menu.addAction(show_help)
@@ -874,7 +873,7 @@ class OpenScienceFramework(base_extension):
 		# Add items as listeners to the Notifier sending login and logout events
 		self.manager.dispatcher.add_listeners(
 			[
-				self, self.manager, self.tfl, self.user_badge, 
+				self, self.manager, self.tfl, self.user_badge,
 				self.project_explorer, self.project_tree
 			]
 		)
@@ -893,15 +892,15 @@ class OpenScienceFramework(base_extension):
 		self.linked_experiment_treewidgetitem = None
 		self.linked_datanode_treewidgetitem = None
 
-		# Set to true, when an experiment is linked to the OSF, but no user is 
-		# currently logged in to the OSF. Upon login, the local file version is 
+		# Set to true, when an experiment is linked to the OSF, but no user is
+		# currently logged in to the OSF. Upon login, the local file version is
 		# checked against the linked on on the OSF to see if they are still synced.
 		self.sync_check_required = False
 
 		# If a valid stored token is found, read that in an dispatch login event
 		if self.manager.check_for_stored_token(self.manager.tokenfile):
 			self.manager.dispatcher.dispatch_login()
-		
+
 		# Monkey-patch main_windows closeEvent so that the login window also closes
 		# if OpenSesame is closed
 		self.mw_closeEvent = self.main_window.closeEvent
@@ -921,25 +920,25 @@ class OpenScienceFramework(base_extension):
 
 		data = item.data(0,QtCore.Qt.UserRole)
 		kind = data["attributes"]["kind"]
-		
+
 		firstAction = context_menu.actions()[0]
 		if kind == 'folder':
 			# Sync experiment entry
 			sync_experiment = QtWidgets.QAction(QtGui.QIcon.fromTheme('gcolor2'),
-				_(u"Link experiment here"), 
+				_(u"Link experiment here"),
 				context_menu)
 			sync_experiment.triggered.connect(self.__link_experiment_to_osf)
 			context_menu.insertAction(firstAction, sync_experiment)
 			# Sync data entry
 			sync_data = QtWidgets.QAction(QtGui.QIcon.fromTheme('mail-outbox'),
-				_(u"Link as data folder"), 
+				_(u"Link as data folder"),
 				context_menu)
 			sync_data.triggered.connect(self.__link_data_to_osf)
 			context_menu.insertAction(firstAction, sync_data)
 			context_menu.insertSeparator(firstAction)
 		elif kind == "file":
 			name = data["attributes"]["name"]
-			if check_if_opensesame_file(name, True):
+			if util.check_if_opensesame_file(name, True):
 				open_experiment = QtWidgets.QAction(QtGui.QIcon.fromTheme('document-open'),
 					_(u"Open experiment"), context_menu)
 				open_experiment.triggered.connect(self.__open_osf_experiment)
@@ -963,7 +962,7 @@ class OpenScienceFramework(base_extension):
 		self.button_link_data_to_osf.setIcon(QtGui.QIcon.fromTheme('mail-outbox'))
 		self.button_link_data_to_osf.clicked.connect(self.__link_data_to_osf)
 		self.button_link_data_to_osf.setDisabled(True)
-		
+
 		## Unlink buttons
 		unlink_icon = QtGui.QIcon.fromTheme('node-delete')
 
@@ -993,7 +992,7 @@ class OpenScienceFramework(base_extension):
 		explorer.buttonbar.layout().insertWidget(2, self.button_open_from_osf)
 		explorer.buttonbar.layout().insertWidget(2, self.button_link_exp_to_osf)
 		explorer.buttonbar.layout().insertWidget(2, self.button_link_data_to_osf)
-		
+
 		# Add buttons to default explorer buttonset
 		explorer.buttonsets['default'].append(self.button_open_from_osf)
 		explorer.buttonsets['default'].append(self.button_link_exp_to_osf)
@@ -1008,7 +1007,7 @@ class OpenScienceFramework(base_extension):
 
 	def __add_info_linked_widget(self, explorer):
 		""" Adds the widget displaying the information about linked experiments
-		or data folders, including buttons to unlink them, at the top of the 
+		or data folders, including buttons to unlink them, at the top of the
 		OSF explorer. """
 		# Create widget
 		self.info_widget = QtWidgets.QWidget()
@@ -1029,7 +1028,7 @@ class OpenScienceFramework(base_extension):
 		# Widgets for automatically uploading experiment to OSF on save
 		self.widget_autosave_experiment =  QtWidgets.QWidget()
 		autosave_exp_layout = QtWidgets.QHBoxLayout()
-		
+
 		self.widget_autosave_experiment.setLayout(autosave_exp_layout)
 		autosave_exp_label = QtWidgets.QLabel(_(u"Upload without asking"))
 		self.checkbox_autosave_experiment = QtWidgets.QCheckBox()
@@ -1083,8 +1082,8 @@ class OpenScienceFramework(base_extension):
 		info_layout.setColumnStretch(2, 1)
 
 		# Make sure the self.info_widget is vertically as small as possible.
-		self.info_widget.setSizePolicy(QtWidgets.QSizePolicy.Minimum, 
-			QtWidgets.QSizePolicy.Fixed)	
+		self.info_widget.setSizePolicy(QtWidgets.QSizePolicy.Minimum,
+			QtWidgets.QSizePolicy.Fixed)
 		explorer.main_layout.insertWidget(1, self.info_widget)
 
 	def __add_help_button(self, explorer):
@@ -1111,7 +1110,7 @@ class OpenScienceFramework(base_extension):
 			raise osf.OSFInvalidResponse('Invalid file info response format: '
 				'{}'.format(e))
 			return
-		
+
 		self.set_linked_experiment(osf_file_path)
 		# See if always upload experiment flag has been set in the experiment
 		if self.experiment.var.has('osf_always_upload_experiment') and \
@@ -1122,7 +1121,7 @@ class OpenScienceFramework(base_extension):
 		self.compare_versions(data)
 
 	def __process_datafolder_info(self, reply):
-		""" Callback for event_open_experiment. Checks if the recently opened 
+		""" Callback for event_open_experiment. Checks if the recently opened
 		experiment has a linked data folder on the OSF and displays this information
 		accordingly in the OSF explorer. """
 		if isinstance(reply, QtNetwork.QNetworkReply):
@@ -1148,8 +1147,8 @@ class OpenScienceFramework(base_extension):
 	def __set_button_availabilty(self, tree_widget_item, col):
 		""" Handles the QTreeWidget currentItemChanged event.
 
-		Checks if buttons should be disabled or not, depending on the currently 
-		selected tree item. For example, the Open button is only activated if an 
+		Checks if buttons should be disabled or not, depending on the currently
+		selected tree item. For example, the Open button is only activated if an
 		OpenSesame experiment is selected."""
 		# If selection changed to no item, disable all buttons
 		if tree_widget_item is None:
@@ -1174,9 +1173,9 @@ class OpenScienceFramework(base_extension):
 			self.button_link_exp_to_osf.setDisabled(True)
 			self.button_link_data_to_osf.setDisabled(True)
 
-		# The open button should only be present when 
+		# The open button should only be present when
 		# an OpenSesame file is selected.
-		if check_if_opensesame_file(name, os3_only=True):
+		if util.check_if_opensesame_file(name, os3_only=True):
 			self.button_open_from_osf.setDisabled(False)
 		else:
 			self.button_open_from_osf.setDisabled(True)
@@ -1184,7 +1183,7 @@ class OpenScienceFramework(base_extension):
 	def __mark_linked_nodes(self):
 		""" Callback for self.tree.refreshFinished. Marks all files that are
 		connected to the OSF in the tree. """
-		
+
 		iterator = QtWidgets.QTreeWidgetItemIterator(self.project_tree)
 		while(iterator.value()):
 			item = iterator.value()
@@ -1225,7 +1224,7 @@ class OpenScienceFramework(base_extension):
 			self.experiment.var.osf_always_upload_experiment = u"no"
 
 	def __handle_check_autosave_data(self, state):
-		""" slot for checkbox_autosave_data"""		
+		""" slot for checkbox_autosave_data"""
 		if state == QtCore.Qt.Checked:
 			self.experiment.var.osf_always_upload_data = u"yes"
 		else:
@@ -1234,22 +1233,22 @@ class OpenScienceFramework(base_extension):
 	def __item_double_clicked(self, item):
 		""" Handles doubleclick on treeWidgetItem """
 		data = item.data(0, QtCore.Qt.UserRole)
-		
+
 		# don't do anything for project nodes
 		if not "kind" in data["attributes"]:
 			return
 
 		kind = data["attributes"]["kind"]
-		
+
 		if kind == "file":
 			name = data["attributes"]["name"]
 			# Open if OpenSesame experiment
-			if check_if_opensesame_file(name, True):
+			if util.check_if_opensesame_file(name, True):
 				self.__open_osf_experiment()
 			# Download if other type of file
 			else:
 				self.project_explorer._clicked_download_file()
-	
+
 	### Actions for experiments
 
 	def __prepare_experiment_sync(self, reply, *args, **kwargs):
@@ -1281,7 +1280,7 @@ class OpenScienceFramework(base_extension):
 			"filename": file_to_upload.fileName(),
 			"filesize": file_to_upload.size()
 		}
-		
+
 		# See if the file info can be updated without refreshing the tree
 		if isinstance(self.linked_experiment_treewidgetitem, QtWidgets.QTreeWidgetItem):
 			try:
@@ -1317,7 +1316,7 @@ class OpenScienceFramework(base_extension):
 		filename = data['attributes']['name']
 
 		# If the selected item is not an OpenSesame file, stop.
-		if not check_if_opensesame_file(filename, os3_only=True):
+		if not util.check_if_opensesame_file(filename, os3_only=True):
 			return
 
 		# See if a previous folder was set, and if not, try to set
@@ -1329,7 +1328,7 @@ class OpenScienceFramework(base_extension):
 
 		# Show dialog in which user chooses where to save the experiment locally
 		# If the experiment already exists, check if it is the same linked experiment.
-	
+
 		destination = QtWidgets.QFileDialog.getSaveFileName(self.project_explorer,
 			_("Choose location on your computer to store experiment"),
 			os.path.join(self.project_explorer.last_dl_destination_folder, filename),
@@ -1352,7 +1351,7 @@ class OpenScienceFramework(base_extension):
 				}
 			else:
 				progress_dialog_data = None
-			
+
 			self.openingDialog = QtWidgets.QMessageBox(
 				QtWidgets.QMessageBox.Information,
 				_(u"Opening"),
@@ -1375,7 +1374,7 @@ class OpenScienceFramework(base_extension):
 				abortSignal=self.openingDialog.rejected,
 				osf_data=data
 			)
-			
+
 	def __experiment_downloaded(self, reply, *args, **kwargs):
 		""" Callback for __open_osf_experiment(). Opens the experiment that justh
 		has been downloaded from the OSF. """
@@ -1405,7 +1404,7 @@ class OpenScienceFramework(base_extension):
 		self.openingDialog.deleteLater()
 
 	### Actions for experiment data
-	
+
 	def __prepare_experiment_data_sync_get_upload_url(self, reply, data_files, node_id):
 		""" Callback for event_process_data_files(). Constructs the correct api
 		endpoint to upload the files to."""
@@ -1514,7 +1513,7 @@ class OpenScienceFramework(base_extension):
 		location """
 		# Check if an experiment is opened
 		if not self.main_window.current_path:
-			self.notifier.warning(_(u'File not saved'), 
+			self.notifier.warning(_(u'File not saved'),
 				_(u"Please save experiment before linking it to the Open "
 					"Science Framework"))
 			return
@@ -1557,7 +1556,7 @@ class OpenScienceFramework(base_extension):
 		# If index_is_present is a number, it means the file is present
 		# and that file needs to be updated.
 		else:
-			# If the file is already found, ask the user if it should be 
+			# If the file is already found, ask the user if it should be
 			# overwritten
 			reply = QtWidgets.QMessageBox.question(
 				None,
@@ -1568,7 +1567,7 @@ class OpenScienceFramework(base_extension):
 			)
 			if reply == QtWidgets.QMessageBox.No:
 				return
-			
+
 			old_item = selected_item.child(index_if_present)
 			# Get data stored in item
 			old_item_data = old_item.data(0,QtCore.Qt.UserRole)
@@ -1591,8 +1590,8 @@ class OpenScienceFramework(base_extension):
 			afterUploadCallback=self.__link_experiment_succeeded,
 			selectedTreeItem=selected_item,
 			updateIndex=index_if_present
-		)		
-		
+		)
+
 	def __link_experiment_succeeded(self, *args, **kwargs):
 		""" Callback for __link_experiment_to_osf if it succeeded. This function
 		adds the new item to the tree, without refreshing it completely. For now,
@@ -1600,10 +1599,10 @@ class OpenScienceFramework(base_extension):
 		providers is very unpredicatble. These simply trigger a full refresh of
 		the tree and don't supply 'new_item_data' to this function. In this
 		case, this function simply returns. """
-	
-		# The complete new tree_widget_item should also be available as the 
-		# 'new_item' kwarg	
-		
+
+		# The complete new tree_widget_item should also be available as the
+		# 'new_item' kwarg
+
 		new_item = kwargs.get('new_item', None)
 
 		if new_item is None:
@@ -1614,7 +1613,7 @@ class OpenScienceFramework(base_extension):
 		try:
 			# The data returne by OSF is really messy, but since we don't have access
 			# to the refreshed data yet, we'll have to make due with it.
-			# Parse OSF id from download url (it is the final component) 
+			# Parse OSF id from download url (it is the final component)
 			self.experiment.var.osf_id = \
 				os.path.basename(new_item_data['id'])
 		except KeyError as e:
@@ -1628,7 +1627,7 @@ class OpenScienceFramework(base_extension):
 		self.set_linked_experiment(osf_path)
 
 		# Mark the current item as linked, and unmark the old one if present
-		if isinstance(self.linked_experiment_treewidgetitem, 
+		if isinstance(self.linked_experiment_treewidgetitem,
 			QtWidgets.QTreeWidgetItem):
 			self.unmark_treewidget_item(self.linked_experiment_treewidgetitem)
 		self.mark_treewidget_item(new_item, _(u"Linked experiment"))
@@ -1649,11 +1648,11 @@ class OpenScienceFramework(base_extension):
 		if reply == QtWidgets.QMessageBox.No:
 			return
 
-		if isinstance(self.linked_experiment_treewidgetitem, 
+		if isinstance(self.linked_experiment_treewidgetitem,
 			QtWidgets.QTreeWidgetItem):
 			self.unmark_treewidget_item(self.linked_experiment_treewidgetitem)
 			self.linked_experiment_treewidgetitem = None
-				
+
 		self.set_linked_experiment(None)
 		self.experiment.var.unset('osf_id')
 		self.experiment.var.unset('osf_always_upload_experiment')
@@ -1667,7 +1666,7 @@ class OpenScienceFramework(base_extension):
 		data of an experiment to, after it is finished. """
 		# Check if an experiment is opened
 		if not self.main_window.current_path:
-			self.notifier.warning(_(u'File not saved'), 
+			self.notifier.warning(_(u'File not saved'),
 				_(u'Please save experiment before linking it to the Open '
 					'Science Framework'))
 			return
@@ -1706,13 +1705,13 @@ class OpenScienceFramework(base_extension):
 				node_url = data['links']['upload']
 			except:
 				warnings.warn("Could not determine folder url")
-				return	
+				return
 
 		self.experiment.var.osf_datanode_id = data['id']
 		self.set_linked_experiment_datanode(node_url)
 
 		# Mark the current item as linked, and unmark the previous one if present
-		if isinstance(self.linked_datanode_treewidgetitem, 
+		if isinstance(self.linked_datanode_treewidgetitem,
 			QtWidgets.QTreeWidgetItem) and selected_item:
 			self.unmark_treewidget_item(self.linked_datanode_treewidgetitem)
 		self.mark_treewidget_item(selected_item, _(u"Linked data folder"))
@@ -1721,7 +1720,7 @@ class OpenScienceFramework(base_extension):
 		# Notify the user about the success
 		self.notifier.success(_(u'Data folder successfully linked'),
 			_(u'The data upload folder has been set to ') + node_url)
-			
+
 	def __unlink_data(self):
 		""" Unlinks the experiment from the OSF """
 		reply = QtWidgets.QMessageBox.question(
@@ -1733,7 +1732,7 @@ class OpenScienceFramework(base_extension):
 		if reply == QtWidgets.QMessageBox.No:
 			return
 
-		if isinstance(self.linked_datanode_treewidgetitem, 
+		if isinstance(self.linked_datanode_treewidgetitem,
 			QtWidgets.QTreeWidgetItem):
 			self.unmark_treewidget_item(self.linked_datanode_treewidgetitem)
 			self.linked_datanode_treewidgetitem = None
@@ -1743,7 +1742,7 @@ class OpenScienceFramework(base_extension):
 		self.experiment.var.unset('osf_always_upload_data')
 		# make sure parent nodes of marked items are still in italic
 		self.__mark_linked_nodes()
-		
+
 	### Other common utility functions
 
 	def __notify_sync_complete(self, message, *args, **kwargs):
@@ -1767,7 +1766,7 @@ class OpenScienceFramework(base_extension):
 			raise ValueError('No item was selected')
 		# Get the selected item's name
 		data = selected_item.data(0, QtCore.Qt.UserRole)
-		
+
 		# Data is 'node' if a top-level project is selected.
 		if data['type'] != 'files':
 			raise ValueError('Top-level repository selected, only folders allowed')
@@ -1778,5 +1777,3 @@ class OpenScienceFramework(base_extension):
 			raise ValueError('Only folders can be linkd to')
 
 		return selected_item
-	
-	
