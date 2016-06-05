@@ -44,6 +44,12 @@ import humanize
 import shutil
 import requests
 
+# Older versions of the json module appear to raise a ValueError
+if hasattr(json, u'JSONDecodeError'):
+	JSONDecodeError = json.JSONDecodeError
+else:
+	JSONDecodeError = ValueError
+
 _ = translation_context(u'OpenScienceFramework', category=u'extension')
 
 __author__ = u"Daniel Schreij"
@@ -784,8 +790,8 @@ class OpenScienceFramework(base_extension):
 			if resp.status_code == requests.codes.ok:
 				server_settings = resp.json()
 			else:
-				raise ConnectionError("HTTP code {}".format(resp.status_code))
-		except (ConnectionError, json.JSONDecodeError) as e:
+				raise requests.ConnectionError("HTTP code {}".format(resp.status_code))
+		except (requests.ConnectionError, JSONDecodeError) as e:
 			warnings.warn("Could not connect to cogsci.nl to get OSF settings:"
 				" {}".format(e))
 			warnings.warn("Using cached OSF settings instead")
