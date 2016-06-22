@@ -573,12 +573,26 @@ class OpenScienceFramework(base_extension):
 		else:
 			progress_dialog_data = None
 
+		self.openingDialog = QtWidgets.QMessageBox(
+			QtWidgets.QMessageBox.Information,
+			_(u"Opening"),
+			_(u"Downloading and opening experiment. Please wait"),
+			QtWidgets.QMessageBox.NoButton,
+			self.main_window
+		)
+		self.openingDialog.addButton(_(u"Cancel"), QtWidgets.QMessageBox.RejectRole)
+		self.openingDialog.setWindowModality(QtCore.Qt.WindowModal)
+		self.openingDialog.show()
+		self.openingDialog.raise_()
+
 		# Download the file to open it later
 		self.manager.download_file(
 			data['data']['links']['download'],
 			self.main_window.current_path,
 			progressDialog=progress_dialog_data,
 			finishedCallback=self.__experiment_downloaded,
+			errorCallback=self.__experiment_open_failed,
+			abortSignal=self.openingDialog.rejected,
 			osf_data=data['data']
 		)
 
