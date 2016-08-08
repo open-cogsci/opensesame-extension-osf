@@ -832,6 +832,8 @@ class OpenScienceFramework(base_extension):
 			tokenfile=tokenfile,
 			notifier=self.notifier)
 
+		self.manager.progress_icon = self.main_window.theme.qicon(u"opensesame")
+
 		# Init and set up user badge
 		icon_size = self.toolbar.iconSize()
 		self.user_badge = widgets.UserBadge(self.manager, icon_size)
