@@ -43,6 +43,7 @@ import arrow
 import humanize
 import shutil
 import requests
+import six
 
 # Older versions of the json module appear to raise a ValueError
 if hasattr(json, u'JSONDecodeError'):
@@ -257,7 +258,7 @@ class VersionChoiceDialog(QtWidgets.QDialog):
 			QtWidgets.QLabel(self.local_version_info['name'])),
 
 		# If filesize is given as int, humanize it to comprehensible notations
-		if type(self.local_version_info['filesize']) in [int]: #, long]: (no longer exists?)
+		if type(self.local_version_info['filesize']) in six.integer_types:
 			self.local_version_info['filesize'] = humanize.naturalsize(
 				self.local_version_info['filesize'])
 		local_form_layout.addRow(_(u"Size:"),
