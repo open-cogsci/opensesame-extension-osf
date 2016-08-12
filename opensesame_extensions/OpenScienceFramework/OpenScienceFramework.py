@@ -95,7 +95,7 @@ class Notifier(QtCore.QObject):
 		super(Notifier,self).__init__()
 		self.extension_manager = extension_manager
 
-	@QtCore.pyqtSlot('QString', 'QString')
+	@QtCore.Slot('QString', 'QString')
 	def error(self, title, message):
 		""" Show an error message in a red notification ribbon
 
@@ -109,7 +109,7 @@ class Notifier(QtCore.QObject):
 		self.extension_manager.fire('notify', message=message, category='danger',
 			always_show=True, timeout=None)
 
-	@QtCore.pyqtSlot('QString', 'QString')
+	@QtCore.Slot('QString', 'QString')
 	def warning(self, title, message):
 		""" Show a warning message in an orange notification ribbon
 
@@ -123,7 +123,7 @@ class Notifier(QtCore.QObject):
 		self.extension_manager.fire('notify', message=message, category='warning',
 			always_show=True)
 
-	@QtCore.pyqtSlot('QString', 'QString')
+	@QtCore.Slot('QString', 'QString')
 	def info(self, title, message):
 		""" Show an information message in a blue notification ribbon
 
@@ -137,7 +137,7 @@ class Notifier(QtCore.QObject):
 		self.extension_manager.fire('notify', message=message, category='info',
 			always_show=True)
 
-	@QtCore.pyqtSlot('QString', 'QString')
+	@QtCore.Slot('QString', 'QString')
 	def success(self, title, message):
 		""" Show a success message in a green notification ribbon
 
@@ -152,7 +152,7 @@ class Notifier(QtCore.QObject):
 			always_show=True)
 
 
-	@QtCore.pyqtSlot('QString', 'QString')
+	@QtCore.Slot('QString', 'QString')
 	def primary(self, title, message):
 		""" Show a success message in a 'primary' class notification ribbon
 
