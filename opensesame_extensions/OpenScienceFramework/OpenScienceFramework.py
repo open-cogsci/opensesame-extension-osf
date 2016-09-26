@@ -1182,6 +1182,7 @@ class OpenScienceFramework(base_extension):
 		# If selection changed to no item, disable all buttons
 		if tree_widget_item is None:
 			self.button_link_exp_to_osf.setDisabled(True)
+			self.button_link_data_to_osf.setDisabled(True)
 			self.button_open_from_osf.setDisabled(True)
 			return
 
