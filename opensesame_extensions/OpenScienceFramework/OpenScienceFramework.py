@@ -614,45 +614,51 @@ class OpenScienceFramework(base_extension):
 		experiment or data folder. """
 		# Make all but the last columns to bold
 		columns = self.project_tree.columnCount()
-		font = item.font(0)
-		font.setBold(True)
-		for i in range(columns-2):
-			item.setFont(i,font)
-		# Last column contains remark_text. Make it italic
-		item.setText(columns-1, remark_text)
-		font = item.font(columns-1)
-		font.setItalic(True)
-		item.setFont(columns-1,font)
-
-		# Make all parent items italic
-		parent = item.parent()
-		while isinstance(parent, QtWidgets.QTreeWidgetItem):
-			font = parent.font(0)
+		try:
+			font = item.font(0)
+			font.setBold(True)
+			for i in range(columns-2):
+				item.setFont(i,font)
+			# Last column contains remark_text. Make it italic
+			item.setText(columns-1, remark_text)
+			font = item.font(columns-1)
 			font.setItalic(True)
-			parent.setFont(0,font)
-			parent = parent.parent()
+			item.setFont(columns-1,font)
+
+			# Make all parent items italic
+			parent = item.parent()
+			while isinstance(parent, QtWidgets.QTreeWidgetItem):
+				font = parent.font(0)
+				font.setItalic(True)
+				parent.setFont(0,font)
+				parent = parent.parent()
+		except RuntimeError as e:
+			warnings.warn('could not get source node: {}'.format(e))
 
 	def unmark_treewidget_item(self, item):
 		""" Removes marking of widget item as linked element """
 		# Make all but the last columns to bold
 		columns = self.project_tree.columnCount()
-		font = item.font(0)
-		font.setBold(False)
-		for i in range(columns-2):
-			item.setFont(i,font)
-		# Last column contains remark_text. Make it italic
-		item.setText(columns-1, '')
-		font = item.font(columns-1)
-		font.setItalic(False)
-		item.setFont(columns-1,font)
-
-		# Reset parent item fonts
-		parent = item.parent()
-		while isinstance(parent, QtWidgets.QTreeWidgetItem):
-			font = parent.font(0)
+		try:
+			font = item.font(0)
+			font.setBold(False)
+			for i in range(columns-2):
+				item.setFont(i,font)
+			# Last column contains remark_text. Make it italic
+			item.setText(columns-1, '')
+			font = item.font(columns-1)
 			font.setItalic(False)
-			parent.setFont(0,font)
-			parent = parent.parent()
+			item.setFont(columns-1,font)
+
+			# Reset parent item fonts
+			parent = item.parent()
+			while isinstance(parent, QtWidgets.QTreeWidgetItem):
+				font = parent.font(0)
+				font.setItalic(False)
+				parent.setFont(0,font)
+				parent = parent.parent()
+		except RuntimeError as e:
+			warnings.warn('could not get source node: {}'.format(e))
 
 	### OpenSesame events
 
