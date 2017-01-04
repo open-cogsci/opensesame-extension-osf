@@ -1319,6 +1319,8 @@ class OpenScienceFramework(base_extension):
 					self.linked_experiment_treewidgetitem)
 			except RuntimeError as e:
 				warnings.warn('could not get refresh node: {}'.format(e))
+				refresh_node = None
+				updateIndex = None
 		else:
 			refresh_node = None
 			updateIndex = None
