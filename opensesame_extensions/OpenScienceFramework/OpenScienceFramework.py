@@ -950,6 +950,14 @@ class OpenScienceFramework(base_extension):
 		data = item.data(0,QtCore.Qt.UserRole)
 		kind = data["attributes"]["kind"]
 
+		user_has_write_permissions = False
+		try:
+			user_has_write_permissions = "write" in \
+				data["attributes"]["current_user_permissions"]
+		except AttributeError as e:
+			raise osf.OSFInvalidResponse('Could not retrieve permission info: '
+				'{}'.format(e))
+
 		firstAction = context_menu.actions()[0]
 		if kind == 'folder':
 			# Sync experiment entry
@@ -957,12 +965,17 @@ class OpenScienceFramework(base_extension):
 				_(u"Link experiment here"),
 				context_menu)
 			sync_experiment.triggered.connect(self.__link_experiment_to_osf)
+			if not user_has_write_permissions:
+				sync_experiment.setDisabled(True)
 			context_menu.insertAction(firstAction, sync_experiment)
+			
 			# Sync data entry
 			sync_data = QtWidgets.QAction(QtGui.QIcon.fromTheme('mail-outbox'),
 				_(u"Link as data folder"),
 				context_menu)
 			sync_data.triggered.connect(self.__link_data_to_osf)
+			if not user_has_write_permissions:
+				sync_data.setDisabled(True) 
 			context_menu.insertAction(firstAction, sync_data)
 			context_menu.insertSeparator(firstAction)
 		elif kind == "file":
@@ -1196,7 +1209,15 @@ class OpenScienceFramework(base_extension):
 
 		# The save button should only be present when a folder
 		# or an OpenSesame file is selected.
-		if kind == "folder":
+		user_has_write_permissions = False
+		try:
+			user_has_write_permissions = "write" in \
+				data["attributes"]["current_user_permissions"]
+		except AttributeError as e:
+			raise osf.OSFInvalidResponse('Could not retrieve permission info: '
+				'{}'.format(e))
+
+		if kind == "folder" and user_has_write_permissions:
 			self.button_link_exp_to_osf.setDisabled(False)
 			self.button_link_data_to_osf.setDisabled(False)
 		else:
