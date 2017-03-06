@@ -704,47 +704,54 @@ class OpenScienceFramework(base_extension):
 	def event_open_experiment(self, path):
 		""" Check if opened experiment is linked to the OSF and set parameters
 		accordingly """
+		
 		# Only take action if user is logged in
-		if self.manager.logged_in_user:
-			# Check if exp is linked to OSF.
-			# If so, display this information in the OSF explorer.
-			if self.experiment.var.has('osf_id'):
-				self.manager.get_file_info(self.experiment.osf_id,
-					self.__process_file_info)
-			else:
-				# Reset GUI if no osf_id is present
-				self.set_linked_experiment(None)
-
-			# Check if a node to upload data to has been linked for this experiment
-			# If so, display this information in the OSF explorer.
-			if self.experiment.var.has('osf_datanode_id'):
-				# Ids for root level locations (i.e. the root of repository) differ
-				# from those of subfolder locations. Both require a different API call
-				# to get the same kind of information, so construct those accordingly
-				# A root level location will contain a colon.
-				if not ":" in self.experiment.var.osf_datanode_id:
-					self.manager.get_file_info(self.experiment.osf_datanode_id,
-						self.__process_datafolder_info)
-				else:
-					project_id, repo = self.experiment.var.osf_datanode_id.split(':')
-					# For the OSF
-					api_call = osf.api_call('repo_files', project_id, repo)
-					self.__process_datafolder_info(api_call)
-			else:
-				# Reset GUI if this data is not present
-				self.set_linked_experiment_datanode(None)
-			# Refresh contents of the tree so linked items will be marked.
-			if not self.project_tree.isRefreshing:
-				self.project_tree.refresh_contents()
-		# If user is not logged in, issue a warning on opening that a linkt to
-		# the OSF has been detected, but no syncing can occur as long is the user
-		# is not logged in.
-		elif self.experiment.var.has('osf_id') or \
-			self.experiment.var.has('osf_datanode_id'):
-			self.notifier.info(_(u'OSF link detected'),
-				_(u'This experiment is linked to the Open Science Framework. '
+		if not self.manager.logged_in_user:
+			# If user is not logged in, issue a warning on opening that a link to
+			# the OSF has been detected, but no syncing can occur as long is the user
+			# is not logged in.
+			if self.experiment.var.has('osf_id') or \
+				self.experiment.var.has('osf_datanode_id'):
+				self.notifier.info(_(u'OSF link detected'),
+					_(u'This experiment is linked to the Open Science Framework. '
 					'Please login if you want to use the synchronization functionalities'))
-			self.sync_check_required = True
+				self.sync_check_required = True
+			return
+
+		# If a new experiment has been opened, cancel any actions that may be
+		# pending of a previous experiment.
+		self.manager.clear_pending_requests()
+
+		# Check if exp is linked to OSF.
+		# If so, display this information in the OSF explorer.
+		if self.experiment.var.has('osf_id'):
+			self.manager.get_file_info(self.experiment.osf_id,
+				self.__process_file_info)
+		else:
+			# Reset GUI if no osf_id is present
+			self.set_linked_experiment(None)
+
+		# Check if a node to upload data to has been linked for this experiment
+		# If so, display this information in the OSF explorer.
+		if self.experiment.var.has('osf_datanode_id'):
+			# Ids for root level locations (i.e. the root of repository) differ
+			# from those of subfolder locations. Both require a different API call
+			# to get the same kind of information, so construct those accordingly
+			# A root level location will contain a colon.
+			if not ":" in self.experiment.var.osf_datanode_id:
+				self.manager.get_file_info(self.experiment.osf_datanode_id,
+					self.__process_datafolder_info)
+			else:
+				project_id, repo = self.experiment.var.osf_datanode_id.split(':')
+				# For the OSF
+				api_call = osf.api_call('repo_files', project_id, repo)
+				self.__process_datafolder_info(api_call)
+		else:
+			# Reset GUI if this data is not present
+			self.set_linked_experiment_datanode(None)
+		# Refresh contents of the tree so linked items will be marked.
+		if not self.project_tree.isRefreshing:
+			self.project_tree.refresh_contents()	
 
 	def event_process_data_files(self, data_files):
 		""" See if datafiles need to be saved to OSF """
@@ -1152,6 +1159,11 @@ class OpenScienceFramework(base_extension):
 			raise osf.OSFInvalidResponse('Invalid file info response format: '
 				'{}'.format(e))
 			return
+
+		# If the user doesn't have write access to the experiment, unlink it from
+		# the OSF. This can be the case if the user opens an experiment from a 
+		# linked repository of another owner to which there is no write access.
+		
 
 		self.set_linked_experiment(osf_file_path)
 		# See if always upload experiment flag has been set in the experiment
