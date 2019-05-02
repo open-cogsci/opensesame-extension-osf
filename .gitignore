@@ -63,3 +63,5 @@ target/
 token.json
 
 build_all
+
+.vscode
