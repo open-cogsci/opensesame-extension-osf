@@ -65,3 +65,4 @@ token.json
 build_all
 
 .vscode
+.env
