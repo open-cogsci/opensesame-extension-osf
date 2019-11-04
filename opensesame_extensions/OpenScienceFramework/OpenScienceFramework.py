@@ -835,7 +835,10 @@ class OpenScienceFramework(base_extension):
 
         # Store the token in the temp dir (it is only valid for an hour, so this
         # doesn't seem to be a real security risk)
-        tmp_dir = safe_decode(tempfile.gettempdir())
+        tmp_dir = safe_decode(
+            tempfile.gettempdir(),
+            enc=sys.getfilesystemencoding()
+        )
         self.tokenfile = os.path.join(tmp_dir, 'OS_OSF.json')
 
         # Create manager object
